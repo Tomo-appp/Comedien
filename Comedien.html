@@ -1,0 +1,3432 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Comédien — Appli perso</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js"></script>
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<style>
+  html, body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-thumb { background: rgba(128,128,128,.4); border-radius: 3px; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(24px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  .modal-backdrop { animation: fadeIn 0.15s ease-out; }
+  .modal-panel { animation: slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+  main > div { animation: fadeIn 0.15s ease-out; }
+  #print-root { display: none; }
+  @media print {
+    body * { visibility: hidden; }
+    #print-root, #print-root * { visibility: visible; }
+    #print-root { display: block !important; position: absolute; top: 0; left: 0; width: 100%; padding: 24px; }
+  }
+</style>
+</head>
+<body class="m-0">
+<div id="root"></div>
+<div id="print-root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo, useCallback, createContext, useContext } = React;
+
+/* ================= Constantes & données de référence ================= */
+
+const STORAGE_KEY = 'comedien-app-data-v1';
+const CACHET_HOURS = 12;
+const SEUIL_HEURES = 507;
+const MAX_CACHETS_MOIS = 28;
+
+const DEFAULT_CATEGORIES = ['Perso', 'Casting', 'Administration', 'Droits & syndicat'];
+
+const DEFAULT_CONTACTS = [
+  { id: 'res-1', nom: 'France Travail Spectacle', fonction: 'Organisme', categorie: 'Administration', telephone: '', email: '', site: 'https://www.francetravail.fr/spectacle/', notes: 'Allocations, annexes 8/10, démarches intermittence' },
+  { id: 'res-2', nom: 'AFDAS', fonction: 'Organisme de formation', categorie: 'Administration', telephone: '', email: '', site: 'afdas.com', notes: 'Financement des formations continues des intermittents' },
+  { id: 'res-3', nom: 'Audiens', fonction: 'Protection sociale', categorie: 'Administration', telephone: '', email: '', site: 'audiens.org', notes: 'Retraite complémentaire, prévoyance, aides sociales' },
+  { id: 'res-4', nom: 'Caisse des Congés Spectacles', fonction: 'Organisme', categorie: 'Administration', telephone: '', email: '', site: 'conges-spectacles.com', notes: 'Gestion et versement des congés payés du spectacle' },
+  { id: 'res-5', nom: 'GUSO', fonction: 'Guichet unique', categorie: 'Administration', telephone: '', email: '', site: 'guso.fr', notes: 'Guichet unique du spectacle occasionnel' },
+  { id: 'res-6', nom: 'ADAMI', fonction: 'Droits voisins', categorie: 'Droits & syndicat', telephone: '', email: '', site: 'adami.fr', notes: 'Droits voisins des artistes-interprètes (rôles principaux)' },
+  { id: 'res-7', nom: 'SPEDIDAM', fonction: 'Droits voisins', categorie: 'Droits & syndicat', telephone: '', email: '', site: 'spedidam.fr', notes: 'Droits voisins (artistes non génériqués)' },
+  { id: 'res-8', nom: 'SFA-CGT', fonction: 'Syndicat', categorie: 'Droits & syndicat', telephone: '', email: '', site: 'sfa-cgt.fr', notes: 'Syndicat Français des Artistes-Interprètes' },
+  { id: 'res-9', nom: 'AllCasting.fr', fonction: 'Plateforme de casting', categorie: 'Casting', telephone: '', email: '', site: 'allcasting.fr', notes: 'Annonces de casting gratuites' },
+  { id: 'res-10', nom: 'CastProd.com', fonction: 'Plateforme de casting', categorie: 'Casting', telephone: '', email: '', site: 'castprod.com', notes: 'Portail de casting en accès gratuit' },
+  { id: 'res-11', nom: 'Troubadours', fonction: 'Plateforme de casting', categorie: 'Casting', telephone: '', email: '', site: 'troubadours.org', notes: 'Castings gratuits, candidature en un clic' },
+  { id: 'res-12', nom: 'freecasting.fr', fonction: 'Plateforme de casting', categorie: 'Casting', telephone: '', email: '', site: 'freecasting.fr', notes: 'Castings 100% gratuits' },
+];
+
+const EXERCICES = [
+  { id: 'ex1', categorie: 'Respiration', titre: 'Respiration abdominale', description: "Une main sur le ventre : inspire par le nez en gonflant le ventre (pas les épaules), retiens une seconde, puis expire lentement par la bouche en vidant complètement l'air. Répète 10 fois pour ancrer une respiration basse avant de jouer." },
+  { id: 'ex2', categorie: 'Respiration', titre: 'Souffle continu', description: "Expire longuement et régulièrement, comme à travers une paille fine, pour travailler le contrôle et l'allongement du souffle. Alterne avec des expirations normales." },
+  { id: 'ex3', categorie: 'Corps', titre: 'Réveil corporel', description: "Marche dynamique sur place une minute, puis secoue bras et jambes pour relâcher les tensions. Termine par quelques flexions de genoux et rotations d'épaules et de bassin." },
+  { id: 'ex4', categorie: 'Corps', titre: 'Étirements actifs', description: "Étire doucement la nuque (oreille vers l'épaule), les bras au-dessus de la tête, puis penche le buste vers l'avant pour relâcher le dos. Tiens chaque position 15-20 secondes." },
+  { id: 'ex5', categorie: 'Corps', titre: 'Gainage léger', description: "Quelques secondes de gainage pour réveiller le centre du corps et stabiliser l'appui au sol avant de monter en énergie vocale." },
+  { id: 'ex6', categorie: 'Voix', titre: 'Trilles de lèvres', description: "Fais vibrer les lèvres en soufflant sur une note tenue, puis en glissant du grave à l'aigu. Excellent pour échauffer les cordes vocales en douceur." },
+  { id: 'ex7', categorie: 'Voix', titre: 'Lèvres et langue', description: 'Répète rapidement "papapapa", "tatatata", "kakakaka", puis fais rouler un "brrr", pour réveiller les points d\'articulation avant le texte.' },
+  { id: 'ex8', categorie: 'Voix', titre: 'Souffle sur consonnes', description: 'Prononce des séries de consonnes sur un souffle continu ("sssss", "chchchch", "fffff") pour relier respiration et articulation.' },
+  { id: 'ex9', categorie: 'Voix', titre: 'Résonateurs', description: 'Fredonne "mmm" en sentant vibrer le nez et les lèvres, puis fais varier la hauteur pour sentir où résonne le son dans le masque du visage.' },
+  { id: 'ex10', categorie: 'Respiration', titre: 'Respiration costale', description: "Mains posées sur les côtes, inspire en cherchant à écarter la cage thoracique sur les côtés plutôt que de gonfler le ventre. Complète la respiration abdominale en développant la capacité pulmonaire, utile pour tenir de longues tirades." },
+  { id: 'ex11', categorie: 'Respiration', titre: 'Soupir de relâchement', description: "Inspire profondément puis laisse échapper l'air en un grand soupir audible et sans effort. Détend la mâchoire, les épaules et la gorge avant un travail vocal plus poussé." },
+  { id: 'ex12', categorie: 'Respiration', titre: 'Respiration comptée', description: "Inspire sur un compte donné, retiens l'air un instant, puis expire lentement sur un compte plus long. Muscle le contrôle du souffle et la gestion de l'air nécessaire au soutien de la voix." },
+  { id: 'ex13', categorie: 'Corps', titre: "Marche dans l'espace", description: "Déplace-toi librement dans la pièce en changeant régulièrement de rythme (marche lente, course, arrêt sur image) et de direction. Réveille l'énergie, la conscience de l'espace et la disponibilité corporelle." },
+  { id: 'ex14', categorie: 'Corps', titre: 'Le miroir en binôme', description: "Face à un partenaire, l'un initie des mouvements lents que l'autre reproduit en miroir. Développe l'écoute corporelle, l'attention au partenaire et la précision du geste." },
+  { id: 'ex15', categorie: 'Corps', titre: 'Relâchement progressif', description: "En partant des pieds jusqu'à la tête, contracte puis relâche consciemment chaque groupe musculaire. Aide à repérer et évacuer les tensions parasites avant de jouer." },
+  { id: 'ex16', categorie: 'Corps', titre: 'Étirement cou et mâchoire', description: "Rotations douces de la tête et étirements légers de la mâchoire (bâillements provoqués, mouvements latéraux) pour libérer les tensions qui bloquent souvent la voix." },
+  { id: 'ex17', categorie: 'Voix', titre: 'Sirène vocale', description: 'Sur une voyelle tenue ("ou"), fais glisser la voix du grave vers l\'aigu puis inversement, sans à-coups. Échauffe l\'ensemble du registre vocal et assouplit le larynx.' },
+  { id: 'ex18', categorie: 'Voix', titre: 'Lecture exagérée', description: "Lis un texte en exagérant volontairement l'ouverture de bouche et le mouvement des lèvres, comme si tu mâchais chaque syllabe. Renforce la netteté de la diction sans forcer sur la gorge." },
+];
+
+const VIRELANGUES = [
+  "Les chaussettes de l'archiduchesse sont-elles sèches, archi-sèches ?",
+  "Un chasseur sachant chasser doit savoir chasser sans son chien.",
+  "Si six scies scient six cyprès, six cent six scies scient six cent six cyprès.",
+  "Didon dîna, dit-on, du dos d'un dodu dindon.",
+  "La cavale aux Valaques avala l'eau du lac et l'eau du lac lava la cavale au Valaque.",
+  "Trois tortues trottaient sur trois toits très étroits.",
+  "Combien de sous sont ces six saucissons-ci ?",
+  "Ton thé t'a-t-il ôté ta toux ?",
+  "Cinq chiens chassent six chats.",
+  "Que lit Lili sous ces lilas-là ? Lili lit l'Iliade.",
+  "Je veux et j'exige d'exquises excuses.",
+  "Piano, piano, panier plein de bananes.",
+  "Napoléon cédant Sédan, céda ses dents.",
+  "Pruneau cuit, pruneau cru.",
+  "Ces cyprès sont si loin que sais-je si c'est bien eux.",
+];
+
+/* ================= Utilitaires ================= */
+
+let _uidCounter = 0;
+function uid() { return 'id-' + Date.now().toString(36) + '-' + (_uidCounter++).toString(36); }
+
+function defaultData() {
+  return {
+    profile: {
+      prenom: '', nom: '', dateNaissance: '', metier: 'Comédien / Acteur',
+      email: '', telephone: '', liens: [], photo: null, fiches: [],
+      mensurations: { taille: '', poids: '', veste: '', pantalon: '', pointure: '', tete: '', cou: '', poitrine: '', tourTaille: '' },
+      logistique: { permis: false, tatouage: false, notes: '' },
+      cvPro: { formation: [], langues: '', competences: '', experiences: [] },
+    },
+    contacts: DEFAULT_CONTACTS.slice(),
+    categories: DEFAULT_CATEGORIES.slice(),
+    employeurs: [],
+    cachets: [],
+    castings: [],
+    representations: [],
+    textes: [],
+    dossiersTextes: [],
+    favorisExercices: [],
+    dateFinDroits: '',
+    settings: { theme: 'clair', rate: 1, volume: 1, accent: 'teal', fontScale: 'normal' },
+  };
+}
+
+// Fusion en profondeur avec les valeurs par défaut : un JSON restauré (ou une ancienne
+// sauvegarde) peut ne pas avoir tous les champs actuels — sans ça, un champ manquant
+// (ex. profile.cvPro) devient undefined et fait planter l'appli à l'affichage.
+function mergeWithDefaults(parsed) {
+  const base = defaultData();
+  const p = parsed || {};
+  const oldProfile = p.profile || {};
+  const oldCvPro = oldProfile.cvPro || {};
+  // Migration : une ancienne sauvegarde avait "filmographie" (texte libre) au lieu
+  // d'"experiences" (liste structurée) — on la convertit plutôt que de la perdre.
+  const migratedExperiences = Array.isArray(oldCvPro.experiences) ? oldCvPro.experiences
+    : (oldCvPro.filmographie && oldCvPro.filmographie.trim() ? [{ id: uid(), titre: oldCvPro.filmographie.trim(), role: '', annee: '', type: 'Autre' }] : base.profile.cvPro.experiences);
+  // Migration : "formation" était un unique bloc de texte libre, remplacé par une liste
+  // structurée (une entrée par formation/stage) pour éviter un pavé de texte illisible.
+  const migratedFormation = Array.isArray(oldCvPro.formation) ? oldCvPro.formation
+    : (typeof oldCvPro.formation === 'string' && oldCvPro.formation.trim() ? [{ id: uid(), intitule: oldCvPro.formation.trim(), annee: '' }] : base.profile.cvPro.formation);
+  // Migration : "demoLink" (un seul lien) remplacé par "liens" (plusieurs, avec libellé).
+  const migratedLiens = Array.isArray(oldProfile.liens) ? oldProfile.liens
+    : (oldProfile.demoLink && oldProfile.demoLink.trim() ? [{ id: uid(), label: 'Démo', url: oldProfile.demoLink.trim() }] : base.profile.liens);
+  return {
+    ...base, ...p,
+    profile: {
+      ...base.profile, ...oldProfile,
+      liens: migratedLiens,
+      mensurations: { ...base.profile.mensurations, ...(oldProfile.mensurations || {}) },
+      logistique: { ...base.profile.logistique, ...(oldProfile.logistique || {}) },
+      cvPro: { ...base.profile.cvPro, ...oldCvPro, experiences: migratedExperiences, formation: migratedFormation },
+    },
+    settings: { ...base.settings, ...(p.settings || {}) },
+    contacts: Array.isArray(p.contacts) ? p.contacts : base.contacts,
+    categories: Array.isArray(p.categories) ? p.categories : base.categories,
+    employeurs: Array.isArray(p.employeurs) ? p.employeurs : base.employeurs,
+    cachets: Array.isArray(p.cachets) ? p.cachets : base.cachets,
+    castings: Array.isArray(p.castings) ? p.castings : base.castings,
+    representations: Array.isArray(p.representations) ? p.representations : base.representations,
+    textes: Array.isArray(p.textes) ? p.textes : base.textes,
+    dossiersTextes: Array.isArray(p.dossiersTextes) ? p.dossiersTextes : base.dossiersTextes,
+    favorisExercices: Array.isArray(p.favorisExercices) ? p.favorisExercices : base.favorisExercices,
+    dateFinDroits: p.dateFinDroits || base.dateFinDroits,
+  };
+}
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultData();
+    return mergeWithDefaults(JSON.parse(raw));
+  } catch (e) { return defaultData(); }
+}
+
+function saveData(data) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) { console.warn('Sauvegarde impossible', e); }
+}
+
+// Stocké hors de `data` (clé séparée) : la date du dernier export JSON manuel n'est pas
+// une donnée de l'utilisateur à transférer/annuler, juste un repère pour lui rappeler
+// de sauvegarder — un reset ou une restauration ne doit pas y toucher.
+const BACKUP_KEY = 'comedien-last-backup-v1';
+function getLastBackup() {
+  try { const raw = localStorage.getItem(BACKUP_KEY); return raw ? new Date(raw) : null; } catch (e) { return null; }
+}
+function setLastBackup() {
+  try { localStorage.setItem(BACKUP_KEY, new Date().toISOString()); } catch (e) {}
+}
+
+// N'ajoute à l'historique d'annulation que les vrais changements de contenu (cachets,
+// contacts, textes, profil…), pas les réglages d'apparence — un curseur de volume/vitesse
+// déclenche un setData à chaque tick de glissement et inonderait l'historique pour rien.
+function hasDataChange(prev, next) {
+  return Object.keys(next).some(k => k !== 'settings' && prev[k] !== next[k]);
+}
+
+function cx(...parts) { return parts.filter(Boolean).join(' '); }
+
+
+function fmtEuros(n) {
+  const v = Number(n) || 0;
+  return v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  try { return new Date(d).toLocaleDateString('fr-FR'); } catch (e) { return d; }
+}
+
+function fmtMoisAnnee(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const label = new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function computeAge(dateNaissance) {
+  if (!dateNaissance) return null;
+  const birth = new Date(dateNaissance);
+  if (isNaN(birth.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const hadBirthdayThisYear = now.getMonth() > birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() >= birth.getDate());
+  if (!hadBirthdayThisYear) age--;
+  return age;
+}
+
+function normalizeUrl(url) {
+  if (!url) return '';
+  return /^https?:\/\//i.test(url) ? url : 'https://' + url;
+}
+
+// Extrait le texte d'un PDF en reconstruisant les lignes par position verticale
+// (sans ça pdf.js renvoie un seul bloc de texte illisible et non analysable).
+async function extractPdfText(file) {
+  if (!window.pdfjsLib) throw new Error('pdfjsLib indisponible');
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  let text = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    let lastY = null, line = '';
+    content.items.forEach(item => {
+      const y = item.transform[5];
+      if (lastY !== null && Math.abs(y - lastY) > 2) { text += line.trim() + '\n'; line = ''; }
+      line += item.str + ' ';
+      lastY = y;
+    });
+    text += line.trim() + '\n\n';
+  }
+  return text;
+}
+
+// Heuristiques best-effort pour pré-remplir un cachet à partir du texte d'un bulletin
+// (uniquement les PDF avec une vraie couche de texte — pas les scans/photos, pas d'OCR).
+// Ne jamais faire confiance aveuglément : sert uniquement à pré-remplir un brouillon
+// que l'utilisateur doit vérifier avant d'enregistrer.
+// Libellés officiels d'une AEM (Attestation Employeur Mensuelle, modèle Unédic DAJ 110) :
+// "SALAIRES BRUTS", "Nombre de CACHETS", "Date d'embauche", "Raison Sociale". Une vraie
+// AEM (GUSO ou logiciel de paie) respecte ce gabarit, donc ces libellés sont prioritaires
+// sur des motifs génériques de bulletin de paie classique.
+// Détection de doublon de cachet : même employeur + même date de début + même montant.
+// Volontairement strict sur les 3 critères à la fois pour éviter les faux positifs
+// (deux cachets distincts chez le même employeur le même jour, à des tarifs différents,
+// ne seront pas signalés) tout en bloquant le cas réel à risque : réimporter deux fois
+// la même AEM. Un mauvais comptage de cachets fausse directement le suivi des 507h.
+function findDuplicateCachet(candidate, existingCachets, excludeId) {
+  const norm = (s) => (s || '').trim().toLowerCase();
+  const empN = norm(candidate.employeur);
+  if (!empN || !candidate.dateDebut) return null;
+  return existingCachets.find(c =>
+    c.id !== excludeId &&
+    norm(c.employeur) === empN &&
+    c.dateDebut === candidate.dateDebut &&
+    Number(c.montantBrut || 0) === Number(candidate.montantBrut || 0)
+  ) || null;
+}
+
+function findDuplicateContact(candidate, existingContacts, excludeId) {
+  const norm = (s) => (s || '').replace(/\s+/g, '').toLowerCase();
+  return (existingContacts || []).find(c => c.id !== excludeId && (
+    (candidate.nom && candidate.nom.trim() && norm(c.nom) === norm(candidate.nom)) ||
+    (candidate.telephone && candidate.telephone.trim() && norm(c.telephone) === norm(candidate.telephone)) ||
+    (candidate.email && candidate.email.trim() && norm(c.email) === norm(candidate.email))
+  )) || null;
+}
+
+function findDuplicateLien(candidate, existingLiens) {
+  const norm = (s) => (s || '').trim().toLowerCase().replace(/\/+$/, '');
+  return (existingLiens || []).find(l => norm(l.url) === norm(candidate.url)) || null;
+}
+
+function findDuplicateExperience(candidate, existingExperiences) {
+  const norm = (s) => (s || '').trim().toLowerCase();
+  return (existingExperiences || []).find(e => norm(e.titre) === norm(candidate.titre) && norm(e.annee) === norm(candidate.annee)) || null;
+}
+
+function findDuplicateFormation(candidate, existingFormation) {
+  const norm = (s) => (s || '').trim().toLowerCase();
+  return (existingFormation || []).find(f => norm(f.intitule) === norm(candidate.intitule) && norm(f.annee) === norm(candidate.annee)) || null;
+}
+
+function parseYearForSort(str) {
+  const m = (str || '').match(/\d{4}/);
+  return m ? parseInt(m[0], 10) : -1;
+}
+
+function sortByYearDesc(list, key) {
+  return (list || []).slice().sort((a, b) => parseYearForSort(b[key]) - parseYearForSort(a[key]));
+}
+
+function scanBulletinText(text, employeursConnus) {
+  const draft = { type: 'Tournage', projet: '', employeur: '', dateDebut: '', nbCachets: 1, montantBrut: '', statut: 'Déclaré', aem: 'Reçue', notes: '' };
+
+  const montantMatch = text.match(/salaires?\s+bruts?[^0-9]{0,20}(\d{1,6}[.,]\d{2})/i) || text.match(/(?:brut|total brut)[^0-9]{0,15}(\d{1,6}[.,]\d{2})/i);
+  if (montantMatch) draft.montantBrut = montantMatch[1].replace(',', '.');
+
+  const cachetMatch = text.match(/nombre\s+de\s+cachets?[^0-9]{0,15}(\d{1,3}(?:[.,]\d+)?)/i) || text.match(/(\d{1,3}(?:[.,]\d+)?)\s*cachets?/i) || text.match(/cachets?[^0-9]{0,15}(\d{1,3}(?:[.,]\d+)?)/i);
+  if (cachetMatch) draft.nbCachets = cachetMatch[1].replace(',', '.');
+
+  const dateEmbaucheMatch = text.match(/date\s+d['’]embauche[^0-9]{0,20}(\d{2})[\/.](\d{2})[\/.](\d{4})/i);
+  const dateMatch = dateEmbaucheMatch || text.match(/(\d{2})[\/.](\d{2})[\/.](\d{4})/);
+  if (dateMatch) draft.dateDebut = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+
+  const found = (employeursConnus || []).find(emp => text.toLowerCase().includes(emp.nom.toLowerCase()));
+  if (found) {
+    draft.employeur = found.nom;
+    draft.type = found.typeParDefaut || draft.type;
+  } else {
+    const raisonMatch = text.match(/raison\s+sociale\s*:?\s*\n?\s*([A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜŸÇ][^\n]{1,60})/i);
+    if (raisonMatch) draft.employeur = raisonMatch[1].trim();
+  }
+
+  return draft;
+}
+
+const CV_FIELD_LIST = ['PRENOM', 'NOM', 'DATE_NAISSANCE', 'METIER', 'EMAIL', 'TELEPHONE', 'DEMO', 'TAILLE', 'POIDS', 'VESTE', 'PANTALON', 'POINTURE', 'TETE', 'COU', 'POITRINE', 'TOUR_DE_TAILLE', 'PERMIS', 'TATOUAGE', 'FORMATION', 'LANGUES', 'COMPETENCES', 'FILMOGRAPHIE'];
+
+const CV_FORMAT_PROMPT = `Tu es un assistant qui aide un comédien à structurer les informations de son profil professionnel (CV / fiche technique) dans un format précis, à partir de n'importe quelle source (CV existant, texte libre, notes en vrac).
+
+Règles impératives :
+- N'invente JAMAIS une information absente (mensurations, expériences, dates…) : laisse le champ vide après les deux-points s'il n'est pas présent dans ce que je te donne.
+- Ne modifie ni n'invente aucune expérience professionnelle : reprends uniquement celles présentes dans le texte fourni.
+- Réponds UNIQUEMENT avec le bloc structuré ci-dessous rempli, sans aucun commentaire ni explication autour.
+
+Format exact à respecter (garde les libellés en MAJUSCULES tels quels, un champ par ligne — FORMATION, LANGUES et COMPETENCES peuvent tenir sur plusieurs lignes jusqu'au champ suivant) :
+
+PRENOM:
+NOM:
+DATE_NAISSANCE: (format JJ/MM/AAAA)
+METIER:
+EMAIL:
+TELEPHONE:
+DEMO: (lien vers une vidéo de démo si mentionné)
+TAILLE: (en cm, chiffre seul)
+POIDS: (en kg, chiffre seul)
+VESTE:
+PANTALON:
+POINTURE:
+TETE:
+COU:
+POITRINE:
+TOUR_DE_TAILLE:
+PERMIS: (oui ou non)
+TATOUAGE: (oui ou non)
+FORMATION: (une ligne par formation/stage, exactement au format : Intitulé | Année)
+LANGUES:
+COMPETENCES:
+FILMOGRAPHIE: (une ligne par expérience, exactement au format : Titre | Rôle | Année | Type — où Type est l'un de Long-métrage / Court-métrage / Série / Théâtre / Publicité / Voix off / Autre)
+
+Voici les informations à partir desquelles remplir ce format (CV, texte libre, etc.) :
+
+[COLLE TON CV OU TES INFOS ICI]`;
+
+function parseCvCanonicalText(text) {
+  const fieldRegex = new RegExp('^(' + CV_FIELD_LIST.join('|') + ')\\s*:\\s*(.*)$');
+  const result = {};
+  let currentField = null;
+  for (const rawLine of (text || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const m = line.match(fieldRegex);
+    if (m) { currentField = m[1]; result[currentField] = m[2] || ''; }
+    else if (currentField && line) { result[currentField] = (result[currentField] ? result[currentField] + '\n' : '') + line; }
+  }
+  Object.keys(result).forEach(k => { result[k] = result[k].trim(); });
+  return result;
+}
+
+function cvFieldsToProfilePatch(result) {
+  const patch = { mensurations: {}, logistique: {}, cvPro: {} };
+  if (result.PRENOM) patch.prenom = result.PRENOM;
+  if (result.NOM) patch.nom = result.NOM;
+  if (result.DATE_NAISSANCE) {
+    const m = result.DATE_NAISSANCE.match(/(\d{2})[\/.](\d{2})[\/.](\d{4})/);
+    if (m) patch.dateNaissance = `${m[3]}-${m[2]}-${m[1]}`;
+  }
+  if (result.METIER) patch.metier = result.METIER;
+  if (result.EMAIL) patch.email = result.EMAIL;
+  if (result.TELEPHONE) patch.telephone = result.TELEPHONE;
+  if (result.DEMO) patch.liens = [{ id: uid(), label: 'Démo', url: result.DEMO }];
+  [['TAILLE', 'taille'], ['POIDS', 'poids'], ['VESTE', 'veste'], ['PANTALON', 'pantalon'], ['POINTURE', 'pointure'], ['TETE', 'tete'], ['COU', 'cou'], ['POITRINE', 'poitrine'], ['TOUR_DE_TAILLE', 'tourTaille']].forEach(([key, field]) => {
+    if (result[key]) patch.mensurations[field] = result[key];
+  });
+  if (result.PERMIS) patch.logistique.permis = /oui/i.test(result.PERMIS);
+  if (result.TATOUAGE) patch.logistique.tatouage = /oui/i.test(result.TATOUAGE);
+  if (result.FORMATION) {
+    patch.cvPro.formation = result.FORMATION.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+      const parts = line.replace(/^[-•]\s*/, '').split('|').map(s => s.trim());
+      return { id: uid(), intitule: parts[0] || '', annee: parts[1] || '' };
+    });
+  }
+  if (result.LANGUES) patch.cvPro.langues = result.LANGUES;
+  if (result.COMPETENCES) patch.cvPro.competences = result.COMPETENCES;
+  if (result.FILMOGRAPHIE) {
+    patch.cvPro.experiences = result.FILMOGRAPHIE.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+      const parts = line.replace(/^[-•]\s*/, '').split('|').map(s => s.trim());
+      return { id: uid(), titre: parts[0] || '', role: parts[1] || '', annee: parts[2] || '', type: parts[3] || 'Autre' };
+    });
+  }
+  return patch;
+}
+
+function applyProfilePatch(profile, patch, forceOverwrite) {
+  const next = { ...profile, mensurations: { ...profile.mensurations }, logistique: { ...profile.logistique }, cvPro: { ...profile.cvPro } };
+  ['prenom', 'nom', 'dateNaissance', 'metier', 'email', 'telephone'].forEach(k => {
+    if (patch[k] !== undefined && patch[k] !== '' && (forceOverwrite || !next[k])) next[k] = patch[k];
+  });
+  if (patch.liens && patch.liens.length) {
+    if (forceOverwrite) next.liens = patch.liens;
+    else {
+      const nouveaux = patch.liens.filter(l => !findDuplicateLien(l, next.liens));
+      next.liens = [...(next.liens || []), ...nouveaux];
+    }
+  }
+  Object.keys(patch.mensurations || {}).forEach(k => {
+    if (forceOverwrite || !next.mensurations[k]) next.mensurations[k] = patch.mensurations[k];
+  });
+  ['permis', 'tatouage'].forEach(k => {
+    if (patch.logistique && patch.logistique[k] !== undefined && (forceOverwrite || !next.logistique[k])) next.logistique[k] = patch.logistique[k];
+  });
+  if (patch.logistique && patch.logistique.notes && (forceOverwrite || !next.logistique.notes)) next.logistique.notes = patch.logistique.notes;
+  ['langues', 'competences'].forEach(k => {
+    if (patch.cvPro && patch.cvPro[k] && (forceOverwrite || !next.cvPro[k])) next.cvPro[k] = patch.cvPro[k];
+  });
+  if (patch.cvPro && patch.cvPro.formation && patch.cvPro.formation.length) {
+    if (forceOverwrite) next.cvPro.formation = patch.cvPro.formation;
+    else {
+      const nouvelles = patch.cvPro.formation.filter(f => !findDuplicateFormation(f, next.cvPro.formation));
+      next.cvPro.formation = [...(next.cvPro.formation || []), ...nouvelles];
+    }
+  }
+  if (patch.cvPro && patch.cvPro.experiences && patch.cvPro.experiences.length) {
+    if (forceOverwrite) next.cvPro.experiences = patch.cvPro.experiences;
+    else {
+      const nouvelles = patch.cvPro.experiences.filter(exp => !findDuplicateExperience(exp, next.cvPro.experiences));
+      next.cvPro.experiences = [...(next.cvPro.experiences || []), ...nouvelles];
+    }
+  }
+  return next;
+}
+
+/* ================= Icônes (SVG inline, pas de dépendance externe) ================= */
+
+function Icon({ name, size = 20, className = '' }) {
+  const c = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', className };
+  switch (name) {
+    case 'home': return <svg {...c}><path d="M3 11l9-7 9 7" /><path d="M5 10v9a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1v-9" /></svg>;
+    case 'briefcase': return <svg {...c}><rect x="3" y="7" width="18" height="12" rx="2" /><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2" /></svg>;
+    case 'users': return <svg {...c}><circle cx="9" cy="8" r="3" /><path d="M2 20c0-3 3-5 7-5s7 2 7 5" /><circle cx="17" cy="9" r="2.5" /><path d="M22 20c0-2.2-1.8-4-4.5-4.6" /></svg>;
+    case 'book': return <svg {...c}><path d="M4 4.5A2.5 2.5 0 016.5 2H20v17H6.5A2.5 2.5 0 004 16.5v-12z" /><path d="M4 16.5A2.5 2.5 0 006.5 19H20" /></svg>;
+    case 'dumbbell': return <svg {...c}><path d="M6 7v10M18 7v10M2 10v4M22 10v4M6 12h12" /></svg>;
+    case 'wind': return <svg {...c}><path d="M3 8h11a3 3 0 100-3" /><path d="M3 12h15a3 3 0 110 3" /><path d="M3 16h9a2 2 0 110 2" /></svg>;
+    case 'quote': return <svg {...c} fill="currentColor" stroke="none"><path d="M7 7c-2.5 0-4 1.8-4 4.2 0 2.1 1.4 3.6 3.3 3.6.4 2-1 3.4-3 3.9v2c3.6-.6 6-3 6-6.7C9.3 10.6 8.7 7 7 7zm10 0c-2.5 0-4 1.8-4 4.2 0 2.1 1.4 3.6 3.3 3.6.4 2-1 3.4-3 3.9v2c3.6-.6 6-3 6-6.7 0-3.4-.6-7-2.3-7z" /></svg>;
+    case 'user': return <svg {...c}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" /></svg>;
+    case 'sun': return <svg {...c}><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>;
+    case 'moon': return <svg {...c}><path d="M21 12.5A9 9 0 1111.5 3a7 7 0 009.5 9.5z" /></svg>;
+    case 'plus': return <svg {...c}><path d="M12 5v14M5 12h14" /></svg>;
+    case 'edit': return <svg {...c}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>;
+    case 'trash': return <svg {...c}><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" /></svg>;
+    case 'check': return <svg {...c}><path d="M20 6L9 17l-5-5" /></svg>;
+    case 'x': return <svg {...c}><path d="M18 6L6 18M6 6l12 12" /></svg>;
+    case 'search': return <svg {...c}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.35-4.35" /></svg>;
+    case 'chevronDown': return <svg {...c}><path d="M6 9l6 6 6-6" /></svg>;
+    case 'chevronUp': return <svg {...c}><path d="M18 15l-6-6-6 6" /></svg>;
+    case 'upload': return <svg {...c}><path d="M12 16V4M6 10l6-6 6 6" /><path d="M4 20h16" /></svg>;
+    case 'download': return <svg {...c}><path d="M12 4v12M6 12l6 6 6-6" /><path d="M4 20h16" /></svg>;
+    case 'mic': return <svg {...c}><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0014 0" /><path d="M12 18v4" /></svg>;
+    case 'play': return <svg {...c} fill="currentColor" stroke="none"><path d="M7 4l13 8-13 8V4z" /></svg>;
+    case 'pause': return <svg {...c} fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>;
+    case 'star': return <svg {...c}><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z" /></svg>;
+    case 'starFilled': return <svg {...c} fill="currentColor"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z" /></svg>;
+    case 'phone': return <svg {...c}><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z" /></svg>;
+    case 'mail': return <svg {...c}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></svg>;
+    case 'globe': return <svg {...c}><circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3a15 15 0 010 18M12 3a15 15 0 000 18" /></svg>;
+    case 'calendar': return <svg {...c}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>;
+    case 'film': return <svg {...c}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 4v16M17 4v16M3 9h4M17 9h4M3 15h4M17 15h4" /></svg>;
+    case 'tag': return <svg {...c}><path d="M20 12l-8 8-9-9V4h7z" /><circle cx="7.5" cy="7.5" r="1.5" /></svg>;
+    case 'folder': return <svg {...c}><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" /></svg>;
+    case 'undo': return <svg {...c}><path d="M9 14L4 9l5-5" /><path d="M4 9h10a6 6 0 010 12h-2" /></svg>;
+    case 'clock': return <svg {...c}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>;
+    case 'save': return <svg {...c}><path d="M5 4h11l3 3v13H5z" /><path d="M8 4v5h8V4M8 20v-6h8v6" /></svg>;
+    case 'filter': return <svg {...c}><path d="M4 4h16l-6 8v6l-4 2v-8z" /></svg>;
+    case 'camera': return <svg {...c}><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg>;
+    case 'arrowLeft': return <svg {...c}><path d="M19 12H5M12 19l-7-7 7-7" /></svg>;
+    case 'skip': return <svg {...c}><path d="M5 4l10 8-10 8V4z" /><path d="M19 5v14" /></svg>;
+    case 'copy': return <svg {...c}><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 012-2h10" /></svg>;
+    case 'settings': return <svg {...c}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.6V21a2 2 0 11-4 0v-.2a1.7 1.7 0 00-1-1.5 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.6-1H3a2 2 0 110-4h.2a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.6V3a2 2 0 114 0v.2a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.6 1H21a2 2 0 110 4h-.2a1.7 1.7 0 00-1.5 1z" /></svg>;
+    default: return null;
+  }
+}
+
+/* ================= Contexte thème ================= */
+
+const ThemeContext = createContext({ theme: 'clair', toggle: () => {} });
+function useTheme() { return useContext(ThemeContext); }
+
+const ACCENT_OPTIONS = [
+  { id: 'teal', label: 'Teal' },
+  { id: 'violet', label: 'Violet' },
+  { id: 'blue', label: 'Bleu' },
+  { id: 'amber', label: 'Ambre' },
+  { id: 'emerald', label: 'Émeraude' },
+];
+
+// Variable de module plutôt qu'un paramètre : themeClasses(theme) est appelé à ~30
+// endroits dans le fichier, refaire passer un accent partout serait risqué. App()
+// met à jour cette variable en tout début de rendu, avant que le moindre enfant
+// n'appelle themeClasses — React rendant toujours le parent avant ses enfants dans
+// une même passe synchrone, la valeur est garantie à jour partout où elle est lue.
+let currentAccent = 'teal';
+
+function themeClasses(theme) {
+  const c = currentAccent;
+  if (theme === 'sombre') {
+    return {
+      bg: 'bg-[#0a0a0a]', panel: 'bg-[#161616]', panelBorder: 'border-[#2a2a2a]',
+      text: 'text-[#f0efec]', textMuted: 'text-[#9a9894]', accent: `text-${c}-400`,
+      input: 'bg-[#161616] border-[#2a2a2a] text-[#f0efec] placeholder-[#666]',
+      btnPrimary: `bg-${c}-500 hover:bg-${c}-400 text-[#0a0a0a] font-semibold`,
+      btnGhost: `hover:bg-[#1e1e1e] text-[#e2e0dc]`,
+      cardHover: `hover:bg-[#1a1a1a]`,
+      soft: `!bg-[#1a1a1a]`,
+      headerGrad: `!bg-${c}-800`,
+      ring: `focus:ring-${c}-400/50`,
+    };
+  }
+  return {
+    bg: 'bg-[#FAF9F5]', panel: 'bg-white', panelBorder: `border-${c}-100`,
+    text: 'text-stone-900', textMuted: 'text-stone-500', accent: `text-${c}-700`,
+    input: 'bg-white border-stone-200 text-stone-900 placeholder-stone-400',
+    btnPrimary: `bg-${c}-700 hover:bg-${c}-600 text-white font-semibold`,
+    btnGhost: `hover:bg-${c}-50 text-stone-700`,
+    cardHover: `hover:bg-${c}-50/60`,
+    soft: `!bg-${c}-50/70`,
+    headerGrad: `!bg-${c}-700`,
+    ring: `focus:ring-${c}-400/50`,
+  };
+}
+
+/* ================= Composants UI génériques ================= */
+
+function Btn({ variant = 'primary', onClick, children, className = '', type = 'button', title, disabled }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const base = 'inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-medium transition active:scale-95';
+  const styles = variant === 'primary' ? t.btnPrimary : variant === 'danger' ? 'bg-red-600 hover:bg-red-500 text-white' : t.btnGhost;
+  return <button type={type} title={title} onClick={onClick} disabled={disabled} className={cx(base, styles, disabled ? 'opacity-40 pointer-events-none' : '', className)}>{children}</button>;
+}
+
+function IconBtn({ name, onClick, title, className = '', danger, active }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  return (
+    <button type="button" title={title} onClick={onClick}
+      className={cx('p-2.5 rounded-full transition active:scale-90', active ? 'text-amber-500 hover:bg-amber-500/10' : danger ? 'text-red-500 hover:bg-red-500/10' : t.btnGhost, className)}>
+      <Icon name={name} size={18} />
+    </button>
+  );
+}
+
+function ConfirmDeleteButton({ onConfirm, title = 'Supprimer' }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const timer = setTimeout(() => setConfirming(false), 6000);
+    return () => clearTimeout(timer);
+  }, [confirming]);
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-1">
+        <button type="button" title="Confirmer la suppression" onClick={(e) => { e.stopPropagation(); onConfirm(); setConfirming(false); }}
+          className="p-2.5 rounded-full bg-red-600 hover:bg-red-500 text-white transition active:scale-90">
+          <Icon name="check" size={16} />
+        </button>
+        <button type="button" title="Annuler" onClick={(e) => { e.stopPropagation(); setConfirming(false); }}
+          className={cx('p-2.5 rounded-full transition active:scale-90', t.btnGhost)}>
+          <Icon name="x" size={16} />
+        </button>
+      </div>
+    );
+  }
+  return <IconBtn name="trash" danger title={title} onClick={(e) => { e.stopPropagation(); setConfirming(true); }} />;
+}
+
+function Field({ label, children, className = '' }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  return (
+    <label className={cx('block', className)}>
+      {label && <span className={cx('block text-xs font-medium mb-1', t.textMuted)}>{label}</span>}
+      {children}
+    </label>
+  );
+}
+
+function TextInput(props) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const { className, ...rest } = props;
+  return <input {...rest} className={cx('w-full rounded-2xl border px-3.5 py-2.5 text-sm outline-none focus:ring-2', t.ring, t.input, className)} />;
+}
+
+const TextArea = React.forwardRef((props, ref) => {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const { className, ...rest } = props;
+  return <textarea ref={ref} {...rest} className={cx('w-full rounded-2xl border px-3.5 py-2.5 text-sm outline-none focus:ring-2', t.ring, t.input, className)} />;
+});
+
+function Select(props) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const { className, children, ...rest } = props;
+  return <select {...rest} className={cx('w-full rounded-2xl border px-3.5 py-2.5 text-sm outline-none focus:ring-2', t.ring, t.input, className)}>{children}</select>;
+}
+
+function Card({ children, className = '' }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  return <div className={cx('rounded-3xl p-4 shadow-sm', t.panel, className)}>{children}</div>;
+}
+
+function SectionTitle({ children, right }) {
+  return (
+    <div className="flex items-center justify-between mb-3 gap-2">
+      <h2 className="text-xl font-bold tracking-tight">{children}</h2>
+      {right}
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4 modal-backdrop" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className={cx('modal-panel w-full sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-5', t.bg, 'border', t.panelBorder)}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-semibold">{title}</h3>
+          <IconBtn name="x" onClick={onClose} title="Fermer" />
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ text, icon }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  return (
+    <div className="text-center py-8">
+      {icon && (
+        <div className={cx('w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center', t.soft)}>
+          <Icon name={icon} size={22} className={t.textMuted} />
+        </div>
+      )}
+      <div className={cx('text-sm', t.textMuted)}>{text}</div>
+    </div>
+  );
+}
+
+function Pill({ children }) {
+  const { theme } = useTheme();
+  const c = currentAccent;
+  return <span className={cx('text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap', theme === 'sombre' ? `bg-${c}-500/15 text-${c}-300` : `bg-${c}-50 text-${c}-700`)}>{children}</span>;
+}
+
+/* ================= Calculs intermittence ================= */
+
+function computeStats(cachets) {
+  const now = new Date();
+  const yearAgo = new Date(now); yearAgo.setDate(yearAgo.getDate() - 365);
+  const recent = cachets.filter(cc => cc.dateDebut && new Date(cc.dateDebut) >= yearAgo && new Date(cc.dateDebut) <= now);
+
+  const byMonth = {};
+  recent.forEach(cc => {
+    const key = cc.dateDebut.slice(0, 7);
+    byMonth[key] = (byMonth[key] || 0) + (Number(cc.nbCachets) || 0);
+  });
+  let cachetsComptes = 0;
+  Object.values(byMonth).forEach(n => { cachetsComptes += Math.min(n, MAX_CACHETS_MOIS); });
+
+  // Certains contrats sont déclarés en heures directes plutôt qu'en cachets (ex.
+  // technicien, ou AEM qui ne renseigne que les heures) — elles comptent aussi
+  // pour les 507h, sans passer par la conversion cachet -> 12h ni le plafond mensuel.
+  const heuresDirectes = recent.reduce((s, cc) => s + (Number(cc.heures) || 0), 0);
+  const heures = cachetsComptes * CACHET_HOURS + heuresDirectes;
+  const cumulBrut = recent.reduce((s, cc) => s + (Number(cc.montantBrut) || 0), 0);
+  const tauxHoraire = heures > 0 ? cumulBrut / heures : 0;
+  const cachetsManquants = Math.max(0, Math.ceil((SEUIL_HEURES - heures) / CACHET_HOURS));
+  const sjrEstime = cumulBrut / 365;
+
+  let joursAvantSortie = null, dateSortie = null;
+  const datesTriees = recent.map(cc => cc.dateDebut).filter(Boolean).sort();
+  if (datesTriees.length) {
+    const oldest = datesTriees[0];
+    const exitDate = new Date(oldest); exitDate.setDate(exitDate.getDate() + 365);
+    dateSortie = exitDate;
+    joursAvantSortie = Math.ceil((exitDate - now) / 86400000);
+  }
+  const moisCourant = now.toISOString().slice(0, 7);
+  const cachetsMoisCourant = byMonth[moisCourant] || 0;
+  return { heures, heuresDirectes, cachetsComptes, cumulBrut, tauxHoraire, cachetsManquants, sjrEstime, joursAvantSortie, dateSortie, cachetsMoisCourant };
+}
+
+// Récap par année civile (déclaration/impôts) — indépendant des 12 mois glissants
+// utilisés pour les 507h, qui ne couvrent qu'une fenêtre récente.
+function computeRecapAnnuel(cachets) {
+  const byYear = {};
+  cachets.forEach(cc => {
+    if (!cc.dateDebut) return;
+    const year = cc.dateDebut.slice(0, 4);
+    if (!byYear[year]) byYear[year] = { nbCachets: 0, brut: 0 };
+    byYear[year].nbCachets += Number(cc.nbCachets) || 0;
+    byYear[year].brut += Number(cc.montantBrut) || 0;
+  });
+  return Object.entries(byYear).map(([year, v]) => ({ year, ...v })).sort((a, b) => b.year.localeCompare(a.year));
+}
+
+/* ================= Parsing de texte théâtral ================= */
+
+// Parsing inspiré du protocole CEAD (noms de personnages en capitales, didascalies
+// attachées après une virgule ou entre parenthèses). Traite le texte paragraphe par
+// paragraphe (séparés par une ligne vide) : un paragraphe qui commence par un nom
+// détecté ouvre une nouvelle réplique, sinon il prolonge le personnage courant.
+function parseScript(raw) {
+  const NAME = "A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜŸÇ";
+  const cueOwnLine = new RegExp(`^([${NAME}][${NAME}0-9'\\-\\s]{0,35})\\s*[:.]?\\s*$`);
+  const cueWithDidascalie = new RegExp(`^([${NAME}][${NAME}0-9'\\-\\s]{0,35}?),\\s*([a-zàâäéèêëîïôöùûüÿç].*)$`);
+  const inlineColonRegex = new RegExp(`^([${NAME}][${NAME}0-9'\\-\\s]{0,35}?)\\s*:\\s*(.+)$`);
+  const inlineDashRegex = new RegExp(`^([${NAME}][${NAME}0-9'\\s]{0,35}?)\\s+[-–]\\s+(.+)$`);
+  const spacedRegex = new RegExp(`^([${NAME}][${NAME}0-9'\\-\\s]{0,35}?)\\s{2,}(\\S.*)$`);
+
+  // Détecte si une ligne est une "réplique" (nom de personnage + éventuellement le
+  // début de son texte). Appelé sur CHAQUE ligne (pas juste la 1re d'un paragraphe) :
+  // beaucoup de scripts collent "NOM : réplique" ligne par ligne sans ligne vide entre
+  // deux personnages, et s'arrêter à la 1re ligne fusionnait la 2e réplique dans la 1re.
+  const matchCue = (line) => {
+    let m = line.match(inlineColonRegex);
+    if (m) return { personnage: m[1].trim(), didascalieEntree: '', reste: m[2].trim() };
+    m = line.match(inlineDashRegex);
+    if (m) return { personnage: m[1].trim(), didascalieEntree: '', reste: m[2].trim() };
+    m = line.match(cueWithDidascalie);
+    if (m) return { personnage: m[1].trim(), didascalieEntree: m[2].trim(), reste: '' };
+    m = line.match(cueOwnLine);
+    if (m) return { personnage: m[1].trim(), didascalieEntree: '', reste: '' };
+    m = line.match(spacedRegex);
+    if (m) return { personnage: m[1].trim(), didascalieEntree: '', reste: m[2].trim() };
+    return null;
+  };
+
+  const paragraphs = (raw || '').split(/\n\s*\n/);
+  const blocks = [];
+  let currentChar = null;
+
+  for (const para of paragraphs) {
+    const lines = para.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) continue;
+
+    let pending = null;
+    const flush = () => {
+      if (!pending) return;
+      blocks.push({ id: uid(), personnage: pending.personnage, didascalieEntree: pending.didascalieEntree, texte: pending.texteParts.filter(Boolean).join(' ').trim(), note: '' });
+      currentChar = pending.personnage;
+      pending = null;
+    };
+
+    for (const line of lines) {
+      const cue = matchCue(line);
+      if (cue) {
+        flush();
+        pending = { personnage: cue.personnage, didascalieEntree: cue.didascalieEntree, texteParts: cue.reste ? [cue.reste] : [] };
+      } else if (pending) {
+        pending.texteParts.push(line);
+      } else {
+        pending = { personnage: currentChar || 'Non attribué', didascalieEntree: '', texteParts: [line] };
+      }
+    }
+    flush();
+  }
+  return blocks;
+}
+
+// Découpe un texte en segments pour l'affichage : les passages entre parenthèses
+// (didascalies CEAD dans la réplique) ressortent en italique.
+function renderTexteAvecDidascalies(texte) {
+  const parts = (texte || '').split(/(\([^)]*\))/g);
+  return parts.map((part, i) => /^\(.*\)$/.test(part) ? <em key={i}>{part}</em> : <React.Fragment key={i}>{part}</React.Fragment>);
+}
+
+// Couleurs de surlignage auto des répliques d'un personnage : fonds pastel clairs
+// + texte forcé en gris très foncé, pour rester lisible quel que soit le thème
+// (clair ou sombre) de l'appli — jamais de texte clair sur fond clair.
+const HIGHLIGHT_COLORS = [
+  { key: 'jaune', label: 'Jaune', bg: '#fde68a' },
+  { key: 'vert', label: 'Vert', bg: '#bbf7d0' },
+  { key: 'bleu', label: 'Bleu', bg: '#bae6fd' },
+  { key: 'rose', label: 'Rose', bg: '#fbcfe8' },
+  { key: 'violet', label: 'Violet', bg: '#ddd6fe' },
+  { key: 'orange', label: 'Orange', bg: '#fed7aa' },
+];
+function highlightColorBg(key) {
+  return (HIGHLIGHT_COLORS.find(c => c.key === key) || HIGHLIGHT_COLORS[0]).bg;
+}
+const HIGHLIGHT_TEXT_COLOR = '#1e293b';
+
+function estimerLecture(blocks) {
+  const texteComplet = blocks.map(b => b.texte).join(' ');
+  const mots = texteComplet.trim() ? texteComplet.trim().split(/\s+/).length : 0;
+  return { mots, lent: Math.ceil(mots / 110), normal: Math.ceil(mots / 140), rapide: Math.ceil(mots / 170) };
+}
+
+/* ================= Onglet Tableau de bord (Intermittence + Cachets) ================= */
+
+function CachetForm({ initial, employeurs, onSave, onCancel }) {
+  const [v, setV] = useState(initial || { type: 'Tournage', projet: '', employeur: '', dateDebut: '', nbCachets: 1, heures: '', montantBrut: '', statut: 'Prévu', aem: 'À réclamer', notes: '' });
+  const set = (k) => (e) => setV({ ...v, [k]: e.target.value });
+  const onEmployeurChange = (e) => {
+    const nom = e.target.value;
+    const known = employeurs.find(emp => emp.nom.toLowerCase() === nom.toLowerCase());
+    setV(prev => ({ ...prev, employeur: nom, type: known ? known.typeParDefaut : prev.type }));
+  };
+  return (
+    <div className="space-y-3">
+      <Field label="Type">
+        <Select value={v.type} onChange={set('type')}>
+          <option>Tournage</option><option>Théâtre</option><option>Voix off</option><option>Autre</option>
+        </Select>
+      </Field>
+      <Field label="Projet"><TextInput value={v.projet} onChange={set('projet')} placeholder="Nom du projet" /></Field>
+      <Field label="Employeur / Production">
+        <TextInput list="employeurs-list" value={v.employeur} onChange={onEmployeurChange} placeholder="Tape ou choisis un employeur déjà connu" />
+        <datalist id="employeurs-list">{employeurs.map(emp => <option key={emp.id} value={emp.nom} />)}</datalist>
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date de début"><TextInput type="date" value={v.dateDebut} onChange={set('dateDebut')} /></Field>
+        <Field label="Nombre de cachets"><TextInput type="number" min="0" step="0.5" value={v.nbCachets} onChange={set('nbCachets')} /></Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Heures (si pas de cachets)"><TextInput type="number" min="0" step="0.5" value={v.heures || ''} onChange={set('heures')} placeholder="Ex. contrat horaire" /></Field>
+        <Field label="Montant brut (€)"><TextInput type="number" min="0" step="0.01" value={v.montantBrut} onChange={set('montantBrut')} /></Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Statut">
+          <Select value={v.statut} onChange={set('statut')}><option>Prévu</option><option>Déclaré</option><option>Payé</option></Select>
+        </Field>
+        <Field label="AEM">
+          <Select value={v.aem} onChange={set('aem')}><option>À réclamer</option><option>Reçue</option></Select>
+        </Field>
+      </div>
+      <Field label="Notes"><TextArea rows={2} value={v.notes} onChange={set('notes')} /></Field>
+      <div className="flex justify-end gap-2 pt-2">
+        <Btn variant="ghost" onClick={onCancel}>Annuler</Btn>
+        <Btn onClick={() => onSave(v)}><Icon name="check" size={16} />Enregistrer</Btn>
+      </div>
+    </div>
+  );
+}
+
+function EmployeurForm({ initial, onSave, onCancel }) {
+  const [v, setV] = useState(initial || { nom: '', typeParDefaut: 'Tournage', notes: '' });
+  const set = (k) => (e) => setV({ ...v, [k]: e.target.value });
+  return (
+    <div className="space-y-3">
+      <Field label="Nom"><TextInput value={v.nom} onChange={set('nom')} placeholder="Nom de la production / employeur" /></Field>
+      <Field label="Type de contrat habituel">
+        <Select value={v.typeParDefaut} onChange={set('typeParDefaut')}>
+          <option>Tournage</option><option>Théâtre</option><option>Voix off</option><option>Autre</option>
+        </Select>
+      </Field>
+      <Field label="Notes (SIRET, convention, contact…)"><TextArea rows={2} value={v.notes} onChange={set('notes')} /></Field>
+      <div className="flex justify-end gap-2 pt-2">
+        <Btn variant="ghost" onClick={onCancel}>Annuler</Btn>
+        <Btn disabled={!v.nom.trim()} onClick={() => onSave({ ...v, nom: v.nom.trim() })}><Icon name="check" size={16} />Enregistrer</Btn>
+      </div>
+    </div>
+  );
+}
+
+function BulkAemImportModal({ drafts, onToggle, onConfirm, onClose }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const selectedCount = drafts.filter(d => d.selected).length;
+  return (
+    <Modal title={`Importer ${drafts.length} AEM`} onClose={onClose}>
+      <div className="space-y-2 max-h-[55vh] overflow-y-auto">
+        {drafts.map((d, i) => (
+          <div key={i} className={cx('rounded-xl p-3', d.isDuplicate ? 'bg-red-500/10' : t.soft)}>
+            <label className="flex items-start gap-2.5">
+              <input type="checkbox" checked={d.selected} disabled={d.error} onChange={() => onToggle(i)} className="mt-1 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium truncate">{d.fileName}</div>
+                {d.error ? (
+                  <div className="text-xs text-red-500 mt-1">Échec de lecture — vérifie que c'est un PDF avec du texte, ou ajoute ce cachet manuellement.</div>
+                ) : (
+                  <>
+                    <div className={cx('text-xs', t.textMuted)}>{d.employeur || '(employeur inconnu)'} · {fmtDate(d.dateDebut)} · {fmtEuros(d.montantBrut)} · {d.nbCachets} cachet(s)</div>
+                    {d.isDuplicate && <div className="text-xs text-red-500 font-medium mt-1">⚠️ Doublon probable — déjà enregistré, décoché par sécurité</div>}
+                  </>
+                )}
+              </div>
+            </label>
+          </div>
+        ))}
+      </div>
+      <div className={cx('text-xs mt-3 mb-1', t.textMuted)}>Coche uniquement les cachets à ajouter. Les doublons probables sont décochés par défaut mais restent modifiables individuellement ensuite.</div>
+      <div className="flex justify-end gap-2 pt-2">
+        <Btn variant="ghost" onClick={onClose}>Annuler</Btn>
+        <Btn disabled={selectedCount === 0} onClick={onConfirm}><Icon name="check" size={16} />Importer {selectedCount} cachet(s)</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function Dashboard({ data, setData, onOpenSettings, lastBackupAt }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [modal, setModal] = useState(null); // {editingId, draft?} or null
+  const [empModal, setEmpModal] = useState(null); // {editingId} or null
+  const [showEmployeurs, setShowEmployeurs] = useState(false);
+  const [showAllocation, setShowAllocation] = useState(false);
+  const [showRecap, setShowRecap] = useState(false);
+  const [scanStatus, setScanStatus] = useState('');
+  const [bulkDrafts, setBulkDrafts] = useState(null);
+  const [filterMois, setFilterMois] = useState('Tous');
+  const [searchCachet, setSearchCachet] = useState('');
+  const scanRef = useRef(null);
+  const stats = useMemo(() => computeStats(data.cachets), [data.cachets]);
+  const recapAnnuel = useMemo(() => computeRecapAnnuel(data.cachets), [data.cachets]);
+  const age = computeAge(data.profile.dateNaissance);
+
+  const scanBulletins = async (e) => {
+    const files = [...e.target.files];
+    if (!files.length) return;
+    setScanStatus(`Analyse de ${files.length} fichier(s)…`);
+    const drafts = [];
+    for (const file of files) {
+      try {
+        const text = await extractPdfText(file);
+        const draft = scanBulletinText(text, data.employeurs);
+        const isDuplicate = !!findDuplicateCachet(draft, [...data.cachets, ...drafts]);
+        drafts.push({ ...draft, fileName: file.name, selected: !isDuplicate, isDuplicate });
+      } catch (err) {
+        console.error(err);
+        drafts.push({ type: 'Tournage', projet: '', employeur: '', dateDebut: '', nbCachets: 1, montantBrut: '', statut: 'Déclaré', aem: 'Reçue', notes: '', fileName: file.name, selected: false, isDuplicate: false, error: true });
+      }
+    }
+    setScanStatus('');
+    setBulkDrafts(drafts);
+    if (scanRef.current) scanRef.current.value = '';
+  };
+
+  const toggleBulkDraft = (i) => setBulkDrafts(prev => prev.map((d, idx) => idx === i ? { ...d, selected: !d.selected } : d));
+
+  const confirmBulkImport = () => {
+    const toAdd = bulkDrafts.filter(d => d.selected && !d.error);
+    setData(d => {
+      let cachets = d.cachets, employeurs = d.employeurs;
+      toAdd.forEach(({ fileName, selected, isDuplicate, error, ...cachetFields }) => {
+        cachets = [...cachets, { id: uid(), ...cachetFields }];
+        const nom = (cachetFields.employeur || '').trim();
+        if (nom) {
+          const idx = employeurs.findIndex(emp => emp.nom.toLowerCase() === nom.toLowerCase());
+          employeurs = idx === -1
+            ? [...employeurs, { id: uid(), nom, typeParDefaut: cachetFields.type }]
+            : employeurs.map((emp, i) => i === idx ? { ...emp, typeParDefaut: cachetFields.type } : emp);
+        }
+      });
+      return { ...d, cachets, employeurs };
+    });
+    setBulkDrafts(null);
+  };
+
+  const upsertEmployeur = (v) => {
+    setData(d => {
+      if (empModal.editingId) {
+        return { ...d, employeurs: d.employeurs.map(e => e.id === empModal.editingId ? { ...e, ...v } : e) };
+      }
+      const nom = v.nom.trim();
+      const dupIdx = d.employeurs.findIndex(e => e.nom.trim().toLowerCase() === nom.toLowerCase());
+      const employeurs = dupIdx === -1
+        ? [...d.employeurs, { id: uid(), ...v, nom }]
+        : d.employeurs.map((e, i) => i === dupIdx ? { ...e, ...v, nom: e.nom } : e);
+      return { ...d, employeurs };
+    });
+    setEmpModal(null);
+  };
+  const removeEmployeur = (id) => setData(d => ({ ...d, employeurs: d.employeurs.filter(e => e.id !== id) }));
+
+  const upsertCachet = (v) => {
+    if (!modal.editingId) {
+      const dup = findDuplicateCachet(v, data.cachets);
+      if (dup) {
+        const proceed = window.confirm(`⚠️ Un cachet quasi identique existe déjà : "${dup.employeur}" le ${fmtDate(dup.dateDebut)} pour ${fmtEuros(dup.montantBrut)}. Ajouter quand même ce nouveau cachet (risque de doublon) ?`);
+        if (!proceed) return;
+      }
+    }
+    setData(d => {
+      const cachets = modal.editingId
+        ? d.cachets.map(c => c.id === modal.editingId ? { ...c, ...v } : c)
+        : [...d.cachets, { id: uid(), ...v }];
+      let employeurs = d.employeurs;
+      if (v.employeur && v.employeur.trim()) {
+        const nom = v.employeur.trim();
+        const idx = employeurs.findIndex(emp => emp.nom.toLowerCase() === nom.toLowerCase());
+        employeurs = idx === -1
+          ? [...employeurs, { id: uid(), nom, typeParDefaut: v.type }]
+          : employeurs.map((emp, i) => i === idx ? { ...emp, typeParDefaut: v.type } : emp);
+      }
+      return { ...d, cachets, employeurs };
+    });
+    setModal(null);
+  };
+  const removeCachet = (id) => {
+    setData(d => ({ ...d, cachets: d.cachets.filter(c => c.id !== id) }));
+  };
+
+  const sorted = [...data.cachets].sort((a, b) => (b.dateDebut || '').localeCompare(a.dateDebut || ''));
+  const moisDisponibles = Array.from(new Set(data.cachets.filter(c => c.dateDebut).map(c => c.dateDebut.slice(0, 7)))).sort().reverse();
+  const sortedFiltered = sorted.filter(cc => {
+    const matchMois = filterMois === 'Tous' || (cc.dateDebut && cc.dateDebut.slice(0, 7) === filterMois);
+    const q = searchCachet.trim().toLowerCase();
+    const matchSearch = !q || (cc.employeur || '').toLowerCase().includes(q) || (cc.projet || '').toLowerCase().includes(q);
+    return matchMois && matchSearch;
+  });
+  const pct = Math.min(100, (stats.heures / SEUIL_HEURES) * 100);
+
+  const now = new Date();
+  const next15 = new Date(now.getFullYear(), now.getMonth(), 15);
+  if (now.getDate() >= 15) next15.setMonth(next15.getMonth() + 1);
+  const joursActualisation = Math.ceil((next15 - now) / 86400000);
+
+  const exportCachetsPdf = () => {
+    const el = document.getElementById('print-root');
+    el.innerHTML = '';
+    const accent = '#0f766e';
+    const h2 = `font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:${accent};font-weight:700;border-bottom:1.5px solid ${accent};padding-bottom:4px;margin:22px 0 10px;`;
+    const parYear = recapAnnuel.map(r => ({ ...r, items: sorted.filter(cc => (cc.dateDebut || '').slice(0, 4) === r.year) }));
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'font-family: Helvetica, Arial, sans-serif; color:#1a1a1a; max-width:760px; line-height:1.5;';
+    wrap.innerHTML = `
+      <div style="border-bottom:3px solid ${accent};padding-bottom:16px;">
+        <div style="font-size:26px;font-weight:700;letter-spacing:-0.3px;">${data.profile.prenom || ''} ${data.profile.nom || ''}</div>
+        <div style="font-size:14px;color:${accent};font-weight:600;margin-top:2px;">Cachets &amp; contrats — ${data.cachets.length} au total</div>
+      </div>
+      ${parYear.map(y => `
+        <h2 style="${h2}">${y.year} — ${fmtEuros(y.brut)} brut · ${y.nbCachets} cachet(s)</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+          <thead><tr style="text-align:left;color:#888;font-size:11px;text-transform:uppercase;">
+            <th style="padding:4px 6px 4px 0;">Date</th><th style="padding:4px 6px;">Employeur / Projet</th><th style="padding:4px 6px;">Type</th><th style="padding:4px 6px;text-align:right;">Montant</th><th style="padding:4px 0 4px 6px;">Statut</th>
+          </tr></thead>
+          <tbody>
+            ${y.items.map(cc => `
+              <tr style="border-top:1px solid #eee;">
+                <td style="padding:5px 6px 5px 0;white-space:nowrap;">${fmtDate(cc.dateDebut)}</td>
+                <td style="padding:5px 6px;">${[cc.employeur, cc.projet].filter(Boolean).join(' — ') || '—'}</td>
+                <td style="padding:5px 6px;">${cc.type}${Number(cc.nbCachets) > 0 ? ` · ${cc.nbCachets} cachet(s)` : ''}${Number(cc.heures) > 0 ? ` · ${cc.heures}h` : ''}</td>
+                <td style="padding:5px 6px;text-align:right;white-space:nowrap;">${fmtEuros(cc.montantBrut)}</td>
+                <td style="padding:5px 0 5px 6px;">${cc.statut} · AEM ${cc.aem}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `).join('')}
+    `;
+    el.appendChild(wrap);
+    setTimeout(() => window.print(), 50);
+  };
+
+  const hasRealData = data.cachets.length > 0 || data.textes.length > 0;
+  const joursDepuisSauvegarde = lastBackupAt ? Math.floor((now - lastBackupAt) / 86400000) : null;
+  const shouldRemindBackup = hasRealData && (joursDepuisSauvegarde === null || joursDepuisSauvegarde > 30);
+
+  return (
+    <div className="space-y-3 pb-4">
+      {shouldRemindBackup && (
+        <Card className={cx('flex items-center gap-3', t.soft)}>
+          <Icon name="download" size={20} className={t.accent} />
+          <div className="text-xs flex-1">
+            <strong className={t.accent}>Sauvegarde</strong> — {joursDepuisSauvegarde === null ? "tu n'as jamais exporté tes données" : `dernière sauvegarde il y a ${joursDepuisSauvegarde} jour(s)`}, pense à en faire une pour ne rien perdre en cas de changement de téléphone.
+          </div>
+          <Btn variant="ghost" onClick={onOpenSettings} className="shrink-0">Réglages</Btn>
+        </Card>
+      )}
+      {joursActualisation <= 5 && (
+        <Card className={cx('flex items-center gap-3', t.soft)}>
+          <Icon name="clock" size={20} className={t.accent} />
+          <div className="text-xs">
+            <strong className={t.accent}>Actualisation France Travail</strong> — plus que {joursActualisation} jour(s) avant le 15, pense à actualiser ta situation.
+          </div>
+        </Card>
+      )}
+      <Card className={cx('text-white overflow-hidden relative', t.headerGrad)}>
+        <div className="text-sm font-medium opacity-90 mb-1">Les 507 heures</div>
+        <div className="w-full h-3 rounded-full overflow-hidden mb-2 bg-black/20">
+          <div className="h-full bg-white" style={{ width: pct + '%' }} />
+        </div>
+        <div className="text-sm opacity-90">{stats.heures}h / {SEUIL_HEURES}h sur les 12 derniers mois glissants</div>
+        {stats.heuresDirectes > 0 && (
+          <div className="text-xs opacity-75 mt-0.5">dont {stats.heuresDirectes}h déclarées directement en heures (hors cachets)</div>
+        )}
+        <div className="grid grid-cols-2 gap-3 mt-4">
+          <div>
+            <div className="text-xs opacity-80">Cachets manquants</div>
+            <div className="text-3xl font-bold">{stats.cachetsManquants}</div>
+          </div>
+          <div>
+            <div className="text-xs opacity-80">Taux horaire moyen</div>
+            <div className="text-3xl font-bold">{fmtEuros(stats.tauxHoraire)}</div>
+          </div>
+        </div>
+        {stats.joursAvantSortie !== null && (
+          <div className="mt-3 text-xs rounded-lg p-2 bg-black/20">
+            Dans {stats.joursAvantSortie} jour(s) ({fmtDate(stats.dateSortie)}), ton cachet le plus ancien sortira de la période de calcul des 507h.
+          </div>
+        )}
+        {stats.cachetsMoisCourant >= MAX_CACHETS_MOIS - 3 && (
+          <div className="mt-2 text-xs rounded-lg p-2 bg-black/20">
+            ⚠️ {stats.cachetsMoisCourant} cachet(s) ce mois-ci — le plafond pris en compte est de {MAX_CACHETS_MOIS}/mois, les suivants ne compteront plus dans le calcul des heures.
+          </div>
+        )}
+        <div className="mt-2 text-xs rounded-lg p-2.5 bg-black/20">
+          <div className="flex items-center justify-between gap-2">
+            <span className="opacity-90">Ma date de fin de droits</span>
+            <input type="date" value={data.dateFinDroits || ''} onChange={(e) => setData(d => ({ ...d, dateFinDroits: e.target.value }))} className="bg-white text-stone-900 rounded-lg px-2 py-1 text-xs shrink-0" />
+          </div>
+          {data.dateFinDroits && (
+            <div className="opacity-80 mt-1">
+              {(() => {
+                const jours = Math.ceil((new Date(data.dateFinDroits) - new Date()) / 86400000);
+                return jours >= 0 ? `Dans ${jours} jour(s) — pense à renouveler tes droits avant cette date.` : "Date dépassée — pense à la mettre à jour après ton renouvellement.";
+              })()}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <button className="w-full flex items-center justify-between" onClick={() => setShowAllocation(s => !s)}>
+          <span className="text-sm font-semibold flex items-center gap-1.5">Estimation allocation <span className={cx('text-xs font-normal', t.textMuted)}>(indicative)</span></span>
+          <Icon name={showAllocation ? 'chevronUp' : 'chevronDown'} size={16} className={t.textMuted} />
+        </button>
+        {showAllocation && (
+          <div className="mt-3">
+            <div className={cx('text-sm mb-2', t.textMuted)}>Cumul brut (12 mois) : <strong className={t.text}>{fmtEuros(stats.cumulBrut)}</strong></div>
+            <div className={cx('text-sm mb-2', t.textMuted)}>Salaire journalier de référence estimé : <strong className={t.text}>{fmtEuros(stats.sjrEstime)}</strong></div>
+            <div className={cx('text-xs rounded-lg p-2.5', t.soft, t.textMuted)}>
+              Ton allocation journalière (annexe 10) se situe entre <strong className={t.accent}>44 €</strong> et environ <strong className={t.accent}>147 à 175 €</strong> brut/jour selon le barème Unédic en vigueur.
+              Le calcul exact (formule A+B+C) dépend de coefficients officiels non garantis ici — utilise le simulateur officiel France Travail pour un chiffre précis.
+            </div>
+            {age === null ? (
+              <div className="mt-2">
+                <Field label="Ta date de naissance (pour le repère allongement senior)">
+                  <TextInput type="date" value={data.profile.dateNaissance || ''} onChange={(e) => setData(d => ({ ...d, profile: { ...d.profile, dateNaissance: e.target.value } }))} />
+                </Field>
+              </div>
+            ) : age >= 53 ? (
+              <div className={cx('text-xs rounded-lg p-2.5 mt-2', t.soft, t.textMuted)}>
+                Tu as <strong className={t.text}>{age} ans</strong> — à partir de 53 ans, la durée d'indemnisation peut être allongée (dispositif senior). Les seuils d'âge et la durée exacte de l'allongement dépendent de ta situation et changent régulièrement : vérifie les modalités précises avec France Travail plutôt que de te fier à un chiffre ici.
+              </div>
+            ) : null}
+          </div>
+        )}
+      </Card>
+
+      {recapAnnuel.length > 0 && (
+        <Card>
+          <button className="w-full flex items-center justify-between" onClick={() => setShowRecap(s => !s)}>
+            <span className={cx('text-sm font-semibold flex items-center gap-1.5', t.textMuted)}><Icon name="calendar" size={16} />Récapitulatif annuel</span>
+            <Icon name={showRecap ? 'chevronUp' : 'chevronDown'} size={16} className={t.textMuted} />
+          </button>
+          {showRecap && (
+            <div className="mt-3 space-y-2">
+              {recapAnnuel.map(r => (
+                <div key={r.year} className={cx('flex items-center justify-between rounded-lg p-2.5', t.soft)}>
+                  <div className="text-sm font-medium">{r.year}</div>
+                  <div className="text-right">
+                    <div className="text-sm font-semibold">{fmtEuros(r.brut)}</div>
+                    <div className={cx('text-xs', t.textMuted)}>{r.nbCachets} cachet(s)</div>
+                  </div>
+                </div>
+              ))}
+              <div className={cx('text-xs rounded-lg p-2.5', t.soft, t.textMuted)}>Total brut par année civile, pour t'aider à préparer ta déclaration — indicatif, à recouper avec tes AEM.</div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      <Card>
+        <button className="w-full flex items-center justify-between" onClick={() => setShowEmployeurs(s => !s)}>
+          <span className={cx('text-sm font-semibold flex items-center gap-1.5', t.textMuted)}><Icon name="briefcase" size={16} />Employeurs ({data.employeurs.length})</span>
+          <Icon name={showEmployeurs ? 'chevronUp' : 'chevronDown'} size={16} />
+        </button>
+        {showEmployeurs && (
+          <div className="mt-3 space-y-2">
+            {data.employeurs.length === 0 && <EmptyState text="Aucun employeur enregistré — ils s'ajoutent automatiquement quand tu crées un cachet, ou ajoute-en un ici." />}
+            {data.employeurs.map(emp => (
+              <div key={emp.id} className={cx('flex items-center gap-3 justify-between rounded-lg p-2', t.soft)}>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className={cx('w-8 h-8 rounded-full flex items-center justify-center shrink-0', theme === 'sombre' ? `bg-${currentAccent}-500/20 text-${currentAccent}-300` : `bg-${currentAccent}-100 text-${currentAccent}-700`)}>
+                    <Icon name={{ Tournage: 'film', 'Théâtre': 'book', 'Voix off': 'mic' }[emp.typeParDefaut] || 'tag'} size={14} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">{emp.nom}</div>
+                    <div className={cx('text-xs', t.textMuted)}>{emp.typeParDefaut}{emp.notes ? ' · ' + emp.notes : ''}</div>
+                  </div>
+                </div>
+                <div className="flex gap-0.5 shrink-0">
+                  <IconBtn name="edit" onClick={() => setEmpModal({ editingId: emp.id })} />
+                  <ConfirmDeleteButton onConfirm={() => removeEmployeur(emp.id)} />
+                </div>
+              </div>
+            ))}
+            <Btn variant="ghost" className="w-full" onClick={() => setEmpModal({ editingId: null })}><Icon name="plus" size={16} />Ajouter un employeur</Btn>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <SectionTitle right={
+          <div className="flex gap-1.5 shrink-0">
+            {sorted.length > 0 && <IconBtn name="download" title="Exporter la liste des cachets (PDF)" onClick={exportCachetsPdf} />}
+            <Btn onClick={() => setModal({ editingId: null })}><Icon name="plus" size={16} />Cachet</Btn>
+          </div>
+        }>Cachets &amp; contrats</SectionTitle>
+        <label className={cx('flex items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-medium cursor-pointer mb-3 text-center', t.soft, t.accent)}>
+          <Icon name="upload" size={16} />Importer une ou plusieurs AEM (PDF) — pré-remplissage à vérifier
+          <input ref={scanRef} type="file" accept=".pdf" multiple onChange={scanBulletins} className="hidden" />
+        </label>
+        {scanStatus && <div className={cx('text-xs mb-2', t.textMuted)}>{scanStatus}</div>}
+        {sorted.length > 3 && (
+          <>
+            <div className="relative mb-2">
+              <Icon name="search" size={16} className={cx('absolute left-2.5 top-2.5', t.textMuted)} />
+              <TextInput placeholder="Rechercher un employeur, un projet…" value={searchCachet} onChange={(e) => setSearchCachet(e.target.value)} className="pl-8" />
+            </div>
+            {moisDisponibles.length > 1 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {['Tous', ...moisDisponibles].map(m => (
+                  <button key={m} onClick={() => setFilterMois(m)}
+                    className={cx('shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-full font-medium', filterMois === m ? t.btnPrimary : cx(t.soft, t.textMuted))}>
+                    {m === 'Tous' ? 'Tous' : fmtMoisAnnee(m)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        {sorted.length === 0 ? <EmptyState icon="briefcase" text="Aucun cachet enregistré pour l'instant." /> : sortedFiltered.length === 0 ? (
+          <EmptyState icon="briefcase" text="Aucun cachet ne correspond." />
+        ) : (
+          <div className="space-y-2">
+            {sortedFiltered.map(cc => (
+              <div key={cc.id} className={cx('rounded-xl p-3', t.soft, t.cardHover)}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{cc.projet || '(sans titre)'} <span className={cx('text-xs font-normal', t.textMuted)}>· {cc.type}</span></div>
+                    <div className={cx('text-xs', t.textMuted)}>{[cc.employeur, fmtDate(cc.dateDebut)].filter(Boolean).join(' — ')}</div>
+                    <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                      <Pill>{cc.statut}</Pill>
+                      <Pill>AEM : {cc.aem}</Pill>
+                      {Number(cc.nbCachets) > 0 && <Pill>{cc.nbCachets} cachet(s)</Pill>}
+                      {Number(cc.heures) > 0 && <Pill>{cc.heures} h</Pill>}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-semibold">{fmtEuros(cc.montantBrut)}</div>
+                    <div className="flex gap-0.5 mt-1">
+                      <IconBtn name="edit" title="Modifier" onClick={() => setModal({ editingId: cc.id })} />
+                      <IconBtn name="copy" title="Dupliquer" onClick={() => { const { id, ...rest } = cc; setModal({ editingId: null, draft: rest }); }} />
+                      <ConfirmDeleteButton onConfirm={() => removeCachet(cc.id)} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {modal && (
+        <Modal title={modal.editingId ? 'Modifier le cachet' : 'Nouveau cachet'} onClose={() => setModal(null)}>
+          {modal.isDraft && <div className={cx('rounded-lg p-2 text-xs mb-3', t.soft, t.accent)}>⚠️ Champs pré-remplis à partir du PDF — vérifie chaque valeur avant d'enregistrer.</div>}
+          <CachetForm initial={modal.draft || (modal.editingId ? data.cachets.find(c => c.id === modal.editingId) : null)} employeurs={data.employeurs} onSave={upsertCachet} onCancel={() => setModal(null)} />
+        </Modal>
+      )}
+      {empModal && (
+        <Modal title={empModal.editingId ? "Modifier l'employeur" : 'Nouvel employeur'} onClose={() => setEmpModal(null)}>
+          <EmployeurForm initial={empModal.editingId ? data.employeurs.find(e => e.id === empModal.editingId) : null} onSave={upsertEmployeur} onCancel={() => setEmpModal(null)} />
+        </Modal>
+      )}
+      {bulkDrafts && (
+        <BulkAemImportModal drafts={bulkDrafts} onToggle={toggleBulkDraft} onConfirm={confirmBulkImport} onClose={() => setBulkDrafts(null)} />
+      )}
+    </div>
+  );
+}
+
+/* ================= Onglet Castings ================= */
+
+const CASTING_STATUTS = ['Postulé', 'Essai vidéo', 'Callback', 'Rappelé', 'Confirmation', 'Refus', 'Obtenu'];
+
+function CastingForm({ initial, structures, onSave, onCancel }) {
+  const [v, setV] = useState(initial || { projet: '', role: '', structure: '', dateEnvoi: '', statut: 'Postulé', dateRelance: '', notes: '' });
+  const set = (k) => (e) => setV({ ...v, [k]: e.target.value });
+  return (
+    <div className="space-y-3">
+      <Field label="Projet"><TextInput value={v.projet} onChange={set('projet')} /></Field>
+      <Field label="Rôle"><TextInput value={v.role} onChange={set('role')} /></Field>
+      <Field label="Structure / contact">
+        <TextInput list="structures-list" value={v.structure} onChange={set('structure')} placeholder="Tape ou choisis une structure déjà connue" />
+        <datalist id="structures-list">{structures.map(s => <option key={s} value={s} />)}</datalist>
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date d'envoi"><TextInput type="date" value={v.dateEnvoi} onChange={set('dateEnvoi')} /></Field>
+        <Field label="Statut">
+          <Select value={v.statut} onChange={set('statut')}>{CASTING_STATUTS.map(s => <option key={s}>{s}</option>)}</Select>
+        </Field>
+      </div>
+      <Field label="Relancer le (optionnel)"><TextInput type="date" value={v.dateRelance} onChange={set('dateRelance')} /></Field>
+      <Field label="Notes"><TextArea rows={2} value={v.notes} onChange={set('notes')} /></Field>
+      <div className="flex justify-end gap-2 pt-2">
+        <Btn variant="ghost" onClick={onCancel}>Annuler</Btn>
+        <Btn onClick={() => onSave(v)}><Icon name="check" size={16} />Enregistrer</Btn>
+      </div>
+    </div>
+  );
+}
+
+function RepresentationForm({ initial, onSave, onCancel }) {
+  const [v, setV] = useState(initial || { titre: '', lieu: '', date: '', heure: '' });
+  const set = (k) => (e) => setV({ ...v, [k]: e.target.value });
+  return (
+    <div className="space-y-3">
+      <Field label="Titre"><TextInput value={v.titre} onChange={set('titre')} /></Field>
+      <Field label="Lieu"><TextInput value={v.lieu} onChange={set('lieu')} /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date"><TextInput type="date" value={v.date} onChange={set('date')} /></Field>
+        <Field label="Heure"><TextInput type="time" value={v.heure} onChange={set('heure')} /></Field>
+      </div>
+      <div className="flex justify-end gap-2 pt-2">
+        <Btn variant="ghost" onClick={onCancel}>Annuler</Btn>
+        <Btn onClick={() => onSave(v)}><Icon name="check" size={16} />Enregistrer</Btn>
+      </div>
+    </div>
+  );
+}
+
+function CastingsTab({ data, setData }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [modal, setModal] = useState(null);
+  const [repModal, setRepModal] = useState(null);
+  const [showReps, setShowReps] = useState(false);
+  const structures = useMemo(() => Array.from(new Set([...data.castings.map(c => c.structure), ...data.employeurs.map(e => e.nom)].filter(Boolean))), [data.castings, data.employeurs]);
+
+  const upsert = (v) => {
+    const prev = modal.editingId ? data.castings.find(c => c.id === modal.editingId) : null;
+    const becameObtenu = v.statut === 'Obtenu' && (!prev || prev.statut !== 'Obtenu');
+    setData(d => ({ ...d, castings: modal.editingId ? d.castings.map(c => c.id === modal.editingId ? { ...c, ...v } : c) : [...d.castings, { id: uid(), ...v }] }));
+    setModal(null);
+    if (becameObtenu) setRepModal({ editingId: null, draft: { titre: v.projet, lieu: v.structure || '', date: '', heure: '' } });
+  };
+  const remove = (id) => setData(d => ({ ...d, castings: d.castings.filter(c => c.id !== id) }));
+
+  const upsertRep = (v) => {
+    setData(d => ({ ...d, representations: repModal.editingId ? d.representations.map(r => r.id === repModal.editingId ? { ...r, ...v } : r) : [...d.representations, { id: uid(), ...v }] }));
+    setRepModal(null);
+  };
+  const removeRep = (id) => setData(d => ({ ...d, representations: d.representations.filter(r => r.id !== id) }));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const sorted = [...data.castings].sort((a, b) => (b.dateEnvoi || '').localeCompare(a.dateEnvoi || ''));
+  const upcomingReps = [...data.representations].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  return (
+    <div className="space-y-3 pb-4">
+      <Card>
+        <button className="w-full flex items-center justify-between" onClick={() => setShowReps(s => !s)}>
+          <span className={cx('text-sm font-medium flex items-center gap-1.5', t.textMuted)}><Icon name="calendar" size={16} />Prochaines dates ({upcomingReps.length})</span>
+          <Icon name={showReps ? 'chevronUp' : 'chevronDown'} size={16} />
+        </button>
+        {showReps && (
+          <div className="mt-3 space-y-2">
+            {upcomingReps.length === 0 && <EmptyState text="Aucune date pour l'instant." />}
+            {upcomingReps.map(r => (
+              <div key={r.id} className="flex items-center justify-between text-sm">
+                <div><span className="font-medium">{r.titre}</span> <span className={t.textMuted}>— {r.lieu} · {fmtDate(r.date)} {r.heure}</span></div>
+                <div className="flex gap-0.5">
+                  <IconBtn name="edit" onClick={() => setRepModal({ editingId: r.id })} />
+                  <ConfirmDeleteButton onConfirm={() => removeRep(r.id)} />
+                </div>
+              </div>
+            ))}
+            <Btn variant="ghost" onClick={() => setRepModal({ editingId: null })}><Icon name="plus" size={16} />Ajouter une date</Btn>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <SectionTitle right={<Btn onClick={() => setModal({ editingId: null })}><Icon name="plus" size={16} />Casting</Btn>}>Castings &amp; auto-candidatures</SectionTitle>
+        {sorted.length === 0 ? <EmptyState icon="film" text="Aucun casting enregistré." /> : (
+          <div className="space-y-2">
+            {sorted.map(c => (
+              <div key={c.id} className={cx('rounded-xl p-3', t.soft, t.cardHover)}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{c.projet}</div>
+                    {(c.role || c.structure) && <div className={cx('text-xs', t.textMuted)}>{[c.role, c.structure].filter(Boolean).join(' — ')}</div>}
+                    <div className="flex gap-1.5 mt-1.5 flex-wrap items-center">
+                      <Pill>{c.statut}</Pill>
+                      <span className={cx('text-xs', t.textMuted)}>{fmtDate(c.dateEnvoi)}</span>
+                      {c.dateRelance && c.dateRelance <= today && <Pill>🔔 Relancer</Pill>}
+                    </div>
+                  </div>
+                  <div className="flex gap-0.5 shrink-0">
+                    <IconBtn name="edit" onClick={() => setModal({ editingId: c.id })} />
+                    <ConfirmDeleteButton onConfirm={() => remove(c.id)} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {modal && (
+        <Modal title={modal.editingId ? 'Modifier le casting' : 'Nouveau casting'} onClose={() => setModal(null)}>
+          <CastingForm initial={modal.editingId ? data.castings.find(c => c.id === modal.editingId) : null} structures={structures} onSave={upsert} onCancel={() => setModal(null)} />
+        </Modal>
+      )}
+      {repModal && (
+        <Modal title={repModal.editingId ? 'Modifier la date' : 'Nouvelle date'} onClose={() => setRepModal(null)}>
+          {repModal.draft && <div className={cx('rounded-lg p-2 text-xs mb-3', t.soft, t.accent)}>🎉 Casting obtenu — ajoute une première date de représentation (tu pourras en ajouter d'autres ensuite).</div>}
+          <RepresentationForm initial={repModal.draft || (repModal.editingId ? data.representations.find(r => r.id === repModal.editingId) : null)} onSave={upsertRep} onCancel={() => setRepModal(null)} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ================= Onglet Contacts ================= */
+
+function ContactForm({ initial, categories, existingContacts, editingId, onSave, onCancel }) {
+  const [v, setV] = useState(initial || { nom: '', fonction: '', categorie: categories[0] || 'Perso', telephone: '', email: '', site: '', notes: '' });
+  const [newCat, setNewCat] = useState('');
+  const set = (k) => (e) => setV({ ...v, [k]: e.target.value });
+
+  const dup = findDuplicateContact(v, existingContacts, editingId);
+
+  return (
+    <div className="space-y-3">
+      <Field label="Nom"><TextInput value={v.nom} onChange={set('nom')} /></Field>
+      {dup && <div className={cx('rounded-lg p-2 text-xs', 'bg-amber-500/15 text-amber-600')}>⚠️ Un contact similaire existe déjà : <strong>{dup.nom}</strong> (même nom, téléphone ou email). Vérifie qu'il ne s'agit pas d'un doublon.</div>}
+      <Field label="Fonction"><TextInput value={v.fonction} onChange={set('fonction')} /></Field>
+      <Field label="Catégorie">
+        <div className="flex gap-2">
+          <Select value={v.categorie} onChange={set('categorie')} className="flex-1">
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </Select>
+        </div>
+        <div className="flex gap-2 mt-2">
+          <TextInput placeholder="Nouvelle catégorie…" value={newCat} onChange={(e) => setNewCat(e.target.value)} />
+          <Btn variant="ghost" onClick={() => { if (newCat.trim()) { setV({ ...v, categorie: newCat.trim() }); setNewCat(''); } }}>+</Btn>
+        </div>
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Téléphone"><TextInput type="tel" value={v.telephone} onChange={set('telephone')} /></Field>
+        <Field label="Email"><TextInput type="email" value={v.email} onChange={set('email')} /></Field>
+      </div>
+      <Field label="Site web"><TextInput value={v.site} onChange={set('site')} /></Field>
+      <Field label="Notes"><TextArea rows={2} value={v.notes} onChange={set('notes')} /></Field>
+      <div className="flex justify-end gap-2 pt-2">
+        <Btn variant="ghost" onClick={onCancel}>Annuler</Btn>
+        <Btn disabled={!v.nom.trim()} onClick={() => onSave({ ...v, nom: v.nom.trim() })}><Icon name="check" size={16} />Enregistrer</Btn>
+      </div>
+    </div>
+  );
+}
+
+function CategoriesModal({ categories, contacts, onRename, onDelete, onClose }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [editing, setEditing] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  return (
+    <Modal title="Gérer les catégories" onClose={onClose}>
+      <div className="space-y-2">
+        {categories.map(cat => {
+          const count = contacts.filter(c => c.categorie === cat).length;
+          return (
+            <div key={cat} className={cx('flex items-center gap-2 rounded-xl p-2', t.soft)}>
+              {editing === cat ? (
+                <>
+                  <TextInput value={renameValue} onChange={(e) => setRenameValue(e.target.value)} className="flex-1" autoFocus />
+                  <IconBtn name="check" onClick={() => { onRename(cat, renameValue.trim()); setEditing(null); }} />
+                  <IconBtn name="x" onClick={() => setEditing(null)} />
+                </>
+              ) : (
+                <>
+                  <div className="flex-1 text-sm min-w-0 truncate">{cat} <span className={cx('text-xs', t.textMuted)}>({count})</span></div>
+                  <IconBtn name="edit" title="Renommer" onClick={() => { setEditing(cat); setRenameValue(cat); }} />
+                  <IconBtn name="trash" danger title="Supprimer" onClick={() => onDelete(cat)} />
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+}
+
+function DossiersModal({ dossiers, textes, onRename, onDelete, onClose }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [editing, setEditing] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  return (
+    <Modal title="Gérer les dossiers" onClose={onClose}>
+      {dossiers.length === 0 ? (
+        <div className={cx('text-sm text-center py-4', t.textMuted)}>Aucun dossier pour l'instant — crée-en un depuis la fiche d'un texte.</div>
+      ) : (
+        <div className="space-y-2">
+          {dossiers.map(d => {
+            const count = textes.filter(tx => tx.dossier === d).length;
+            return (
+              <div key={d} className={cx('flex items-center gap-2 rounded-xl p-2', t.soft)}>
+                {editing === d ? (
+                  <>
+                    <TextInput value={renameValue} onChange={(e) => setRenameValue(e.target.value)} className="flex-1" autoFocus />
+                    <IconBtn name="check" onClick={() => { onRename(d, renameValue.trim()); setEditing(null); }} />
+                    <IconBtn name="x" onClick={() => setEditing(null)} />
+                  </>
+                ) : (
+                  <>
+                    <div className="flex-1 text-sm min-w-0 truncate">{d} <span className={cx('text-xs', t.textMuted)}>({count})</span></div>
+                    <IconBtn name="edit" title="Renommer" onClick={() => { setEditing(d); setRenameValue(d); }} />
+                    <IconBtn name="trash" danger title="Supprimer" onClick={() => onDelete(d)} />
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function ImportContactsModal({ drafts, onToggle, onConfirm, onClose }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const selectedCount = drafts.filter(d => d.selected).length;
+  return (
+    <Modal title={`Importer ${drafts.length} contact(s)`} onClose={onClose}>
+      <div className="space-y-2 max-h-[55vh] overflow-y-auto">
+        {drafts.map((d, i) => (
+          <div key={i} className={cx('rounded-xl p-3', d.isDuplicate ? 'bg-red-500/10' : t.soft)}>
+            <label className="flex items-start gap-2.5">
+              <input type="checkbox" checked={d.selected} onChange={() => onToggle(i)} className="mt-1 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium truncate">{d.nom || '(sans nom)'}</div>
+                <div className={cx('text-xs', t.textMuted)}>{[d.telephone, d.email].filter(Boolean).join(' · ') || 'Aucun numéro ni email'}</div>
+                {d.isDuplicate && <div className="text-xs text-red-500 font-medium mt-1">⚠️ Doublon probable — déjà dans tes contacts, décoché par sécurité</div>}
+              </div>
+            </label>
+          </div>
+        ))}
+      </div>
+      <div className={cx('text-xs mt-3 mb-1', t.textMuted)}>Coche uniquement les contacts à ajouter. Les doublons probables sont décochés par défaut mais restent modifiables individuellement ensuite.</div>
+      <div className="flex justify-end gap-2 pt-2">
+        <Btn variant="ghost" onClick={onClose}>Annuler</Btn>
+        <Btn disabled={selectedCount === 0} onClick={onConfirm}><Icon name="check" size={16} />Importer {selectedCount} contact(s)</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function ContactsTab({ data, setData }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [modal, setModal] = useState(null);
+  const [catModal, setCatModal] = useState(false);
+  const [search, setSearch] = useState('');
+  const [catFilter, setCatFilter] = useState('Toutes');
+  const [sortAlpha, setSortAlpha] = useState(true);
+  const [importDrafts, setImportDrafts] = useState(null);
+  const importSupported = typeof navigator !== 'undefined' && !!navigator.contacts && !!navigator.contacts.select;
+
+  const importFromPhone = async () => {
+    try {
+      const props = await navigator.contacts.getProperties();
+      const wanted = ['name', 'tel', 'email'].filter(p => props.includes(p));
+      const picked = await navigator.contacts.select(wanted, { multiple: true });
+      if (!picked || !picked.length) return;
+      const drafts = picked.map(p => {
+        const candidate = {
+          nom: (p.name && p.name[0]) || '',
+          telephone: (p.tel && p.tel[0]) || '',
+          email: (p.email && p.email[0]) || '',
+          fonction: '', categorie: 'Perso', site: '', notes: '',
+        };
+        const isDuplicate = !!findDuplicateContact(candidate, data.contacts);
+        return { ...candidate, selected: !isDuplicate, isDuplicate };
+      });
+      setImportDrafts(drafts);
+    } catch (err) {
+      // Sélecteur annulé par l'utilisateur ou permission refusée — rien à faire.
+    }
+  };
+  const toggleImportDraft = (i) => setImportDrafts(prev => prev.map((d, idx) => idx === i ? { ...d, selected: !d.selected } : d));
+  const confirmImport = () => {
+    setData(d => {
+      let contacts = d.contacts;
+      let categories = d.categories;
+      importDrafts.filter(dr => dr.selected).forEach(({ selected, isDuplicate, ...contactFields }) => {
+        contacts = [...contacts, { id: uid(), ...contactFields }];
+        if (!categories.includes(contactFields.categorie)) categories = [...categories, contactFields.categorie];
+      });
+      return { ...d, contacts, categories };
+    });
+    setImportDrafts(null);
+  };
+
+  const categories = useMemo(() => {
+    const fromContacts = data.contacts.map(c => c.categorie).filter(Boolean);
+    return Array.from(new Set([...data.categories, ...fromContacts]));
+  }, [data.contacts, data.categories]);
+
+  const renameCategory = (oldName, newName) => {
+    if (!newName || newName === oldName) return;
+    setData(d => ({
+      ...d,
+      categories: Array.from(new Set(d.categories.map(c => c === oldName ? newName : c))),
+      contacts: d.contacts.map(c => c.categorie === oldName ? { ...c, categorie: newName } : c),
+    }));
+    if (catFilter === oldName) setCatFilter(newName);
+  };
+  const deleteCategory = (name) => {
+    const count = data.contacts.filter(c => c.categorie === name).length;
+    const msg = count > 0 ? `${count} contact(s) utilisent "${name}" — ils repasseront en "Perso". Continuer ?` : `Supprimer la catégorie "${name}" ?`;
+    if (!window.confirm(msg)) return;
+    setData(d => ({
+      ...d,
+      categories: d.categories.filter(c => c !== name),
+      contacts: d.contacts.map(c => c.categorie === name ? { ...c, categorie: 'Perso' } : c),
+    }));
+    if (catFilter === name) setCatFilter('Toutes');
+  };
+
+  const upsert = (v) => {
+    setData(d => {
+      const categories = d.categories.includes(v.categorie) ? d.categories : [...d.categories, v.categorie];
+      const contacts = modal.editingId ? d.contacts.map(c => c.id === modal.editingId ? { ...c, ...v } : c) : [...d.contacts, { id: uid(), ...v }];
+      return { ...d, contacts, categories };
+    });
+    setModal(null);
+  };
+  const remove = (id) => setData(d => ({ ...d, contacts: d.contacts.filter(c => c.id !== id) }));
+  const toggleFavori = (id) => setData(d => ({ ...d, contacts: d.contacts.map(c => c.id === id ? { ...c, favori: !c.favori } : c) }));
+
+  let filtered = data.contacts.filter(c => {
+    const matchSearch = !search || (c.nom + ' ' + c.fonction + ' ' + c.notes).toLowerCase().includes(search.toLowerCase());
+    const matchCat = catFilter === 'Toutes' || c.categorie === catFilter;
+    return matchSearch && matchCat;
+  });
+  filtered = filtered.sort((a, b) => {
+    if (!!b.favori !== !!a.favori) return b.favori ? 1 : -1;
+    return sortAlpha ? a.nom.localeCompare(b.nom) : (a.categorie || '').localeCompare(b.categorie || '');
+  });
+
+  return (
+    <div className="space-y-3 pb-4">
+      <Card>
+        <div className="flex gap-2 mb-3">
+          <div className="relative flex-1">
+            <Icon name="search" size={16} className={cx('absolute left-2.5 top-2.5', t.textMuted)} />
+            <TextInput placeholder="Rechercher…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
+          </div>
+          <IconBtn name="filter" title="Trier alphabétique / par catégorie" onClick={() => setSortAlpha(s => !s)} />
+          <IconBtn name="settings" title="Gérer les catégories" onClick={() => setCatModal(true)} />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {['Toutes', ...categories].map(cat => (
+            <button key={cat} onClick={() => setCatFilter(cat)}
+              className={cx('shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-full font-medium', catFilter === cat ? t.btnPrimary : cx(t.soft, t.textMuted))}>
+              {cat}
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle right={
+          <div className="flex gap-1.5 shrink-0">
+            {importSupported && <IconBtn name="phone" title="Importer depuis les contacts du téléphone" onClick={importFromPhone} />}
+            <Btn onClick={() => setModal({ editingId: null })}><Icon name="plus" size={16} />Contact</Btn>
+          </div>
+        }>Mes contacts ({filtered.length})</SectionTitle>
+        {filtered.length === 0 ? <EmptyState icon="users" text="Aucun contact ne correspond." /> : (
+          <div className="space-y-2">
+            {filtered.map(c => (
+              <div key={c.id} className={cx('rounded-xl p-3', t.soft, t.cardHover)}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className={cx('w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-bold text-sm', theme === 'sombre' ? `bg-${currentAccent}-500/20 text-${currentAccent}-300` : `bg-${currentAccent}-100 text-${currentAccent}-700`)}>
+                      {(c.nom || '?').trim().charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                    <div className="font-medium truncate">{c.nom}</div>
+                    {c.fonction && <div className={cx('text-xs', t.textMuted)}>{c.fonction}</div>}
+                    {c.categorie && <div className="mt-1.5"><Pill>{c.categorie}</Pill></div>}
+                    {(c.telephone || c.email || c.site) && (
+                      <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                        {c.telephone && <a href={'tel:' + c.telephone.replace(/\s+/g, '')} onClick={(e) => e.stopPropagation()} className={cx('text-xs flex items-center gap-1 px-2 py-1 rounded-full font-medium max-w-full', t.panel, t.accent)}><Icon name="phone" size={12} className="shrink-0" /><span className="truncate min-w-0">{c.telephone}</span></a>}
+                        {c.email && <a href={'mailto:' + c.email} onClick={(e) => e.stopPropagation()} className={cx('text-xs flex items-center gap-1 px-2 py-1 rounded-full font-medium max-w-full', t.panel, t.accent)}><Icon name="mail" size={12} className="shrink-0" /><span className="truncate min-w-0">{c.email}</span></a>}
+                        {c.site && <a href={normalizeUrl(c.site)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={cx('text-xs flex items-center gap-1 px-2 py-1 rounded-full font-medium max-w-full', t.panel, t.accent)}><Icon name="globe" size={12} className="shrink-0" /><span className="truncate min-w-0">{c.site}</span></a>}
+                      </div>
+                    )}
+                    {c.notes && <div className={cx('text-xs mt-1.5', t.textMuted)}>{c.notes}</div>}
+                    </div>
+                  </div>
+                  <div className="flex gap-0.5 shrink-0">
+                    <IconBtn name={c.favori ? 'starFilled' : 'star'} active={c.favori} title={c.favori ? 'Retirer des favoris' : 'Mettre en favori'} onClick={() => toggleFavori(c.id)} />
+                    <IconBtn name="edit" onClick={() => setModal({ editingId: c.id })} />
+                    <ConfirmDeleteButton onConfirm={() => remove(c.id)} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {modal && (
+        <Modal title={modal.editingId ? 'Modifier le contact' : 'Nouveau contact'} onClose={() => setModal(null)}>
+          <ContactForm initial={modal.editingId ? data.contacts.find(c => c.id === modal.editingId) : null} categories={categories} existingContacts={data.contacts} editingId={modal.editingId} onSave={upsert} onCancel={() => setModal(null)} />
+        </Modal>
+      )}
+      {catModal && (
+        <CategoriesModal categories={categories} contacts={data.contacts} onRename={renameCategory} onDelete={deleteCategory} onClose={() => setCatModal(false)} />
+      )}
+      {importDrafts && (
+        <ImportContactsModal drafts={importDrafts} onToggle={toggleImportDraft} onConfirm={confirmImport} onClose={() => setImportDrafts(null)} />
+      )}
+    </div>
+  );
+}
+
+/* ================= Onglet Textes / Répétition ================= */
+
+function MaskableText({ texte, masked, className = '' }) {
+  const { theme } = useTheme();
+  const [revealed, setRevealed] = useState({});
+  useEffect(() => { setRevealed({}); }, [texte, masked]);
+  if (!masked) return <span className={className}>{renderTexteAvecDidascalies(texte)}</span>;
+  const words = (texte || '').split(/(\s+)/);
+  return (
+    <span className={className}>
+      {words.map((w, i) => /^\s+$/.test(w) ? w : (
+        <span key={i} onClick={() => setRevealed(r => ({ ...r, [i]: !r[i] }))}
+          className={cx('cursor-pointer rounded px-0.5', revealed[i] ? '' : (theme === 'sombre' ? 'bg-slate-600 text-slate-600' : 'bg-slate-300 text-slate-300'))}>
+          {w}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function RehearsalPlayer({ blocks, monPersonnage, rate, volume }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [index, setIndex] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const voiceRef = useRef(null);
+
+  useEffect(() => {
+    function pick() {
+      const voices = window.speechSynthesis.getVoices();
+      voiceRef.current = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('fr')) || voices[0] || null;
+    }
+    pick();
+    window.speechSynthesis.onvoiceschanged = pick;
+    return () => window.speechSynthesis.cancel();
+  }, []);
+
+  const current = blocks[index];
+  const isMine = current && current.personnage === monPersonnage;
+  const finished = index >= blocks.length;
+
+  useEffect(() => {
+    if (!playing || !current) return;
+    if (isMine) { setPlaying(false); return; }
+    if (!current.texte.trim()) { setIndex(i => i + 1); return; }
+    const utt = new SpeechSynthesisUtterance(current.texte);
+    utt.lang = 'fr-FR';
+    if (voiceRef.current) utt.voice = voiceRef.current;
+    utt.rate = rate; utt.volume = volume;
+    utt.onend = () => setIndex(i => i + 1);
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utt);
+    return () => window.speechSynthesis.cancel();
+  }, [playing, index, current, isMine, rate, volume]);
+
+  if (!blocks.length) return <EmptyState text="Aucune réplique détectée. Vérifie l'import du texte." />;
+
+  return (
+    <div className="space-y-3">
+      <div className={cx('rounded-2xl p-4 min-h-[110px] shadow-sm', isMine ? cx(t.soft, 'ring-2', theme === 'sombre' ? `ring-${currentAccent}-400/40` : `ring-${currentAccent}-300`) : t.panel)}>
+        {finished ? <div className="text-center font-medium">Fin du texte 🎬</div> : (
+          <>
+            <div className={cx('text-xs font-bold mb-1 uppercase tracking-wide', isMine ? t.accent : t.textMuted)}>
+              {current.personnage}{isMine && ' (toi)'}
+              {current.didascalieEntree && <span className="italic font-normal normal-case"> , {current.didascalieEntree}</span>}
+            </div>
+            <div className="text-base leading-relaxed">{renderTexteAvecDidascalies(current.texte)}</div>
+          </>
+        )}
+      </div>
+      <div className="flex items-center justify-center gap-3">
+        <IconBtn name="arrowLeft" title="Précédent" onClick={() => { window.speechSynthesis.cancel(); setIndex(i => Math.max(0, i - 1)); }} />
+        {isMine && !finished ? (
+          <Btn onClick={() => setIndex(i => i + 1)}><Icon name="check" size={16} />C'est dit, suivant</Btn>
+        ) : (
+          <IconBtn name={playing ? 'pause' : 'play'} title={playing ? 'Pause' : 'Lecture'} onClick={() => { if (playing) window.speechSynthesis.cancel(); setPlaying(p => !p); }} className="scale-125" />
+        )}
+        <IconBtn name="skip" title="Suivant" onClick={() => { window.speechSynthesis.cancel(); setIndex(i => Math.min(blocks.length, i + 1)); }} />
+      </div>
+      <div className={cx('text-xs text-center', t.textMuted)}>{Math.min(index + 1, blocks.length)} / {blocks.length}</div>
+    </div>
+  );
+}
+
+function Teleprompter({ blocks, fontSize, onToggleHighlight, surlignagePerso, surlignageCouleur }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [speed, setSpeed] = useState(30);
+  const [running, setRunning] = useState(false);
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop += 1;
+    }, 110 - speed);
+    return () => clearInterval(id);
+  }, [running, speed]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <Btn onClick={() => setRunning(r => !r)}><Icon name={running ? 'pause' : 'play'} size={16} />{running ? 'Stop' : 'Défiler'}</Btn>
+        <Field label="Vitesse" className="flex-1">
+          <input type="range" min="5" max="80" value={speed} onChange={(e) => setSpeed(Number(e.target.value))} className="w-full" />
+        </Field>
+      </div>
+      <div ref={scrollRef} className={cx('rounded-2xl p-4 h-[32rem] overflow-y-auto shadow-sm', t.panel)} style={{ fontSize: fontSize + 'px' }}>
+        {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleur={surlignageCouleur} />)}
+      </div>
+    </div>
+  );
+}
+
+// Format "script" classique du théâtre français : nom du personnage centré en
+// capitales au-dessus de la réplique, texte en continu (pas de bulle de chat) —
+// remplace l'ancien style "carte" par bloc, qui ressemblait à une messagerie.
+function ScriptLine({ b, t, showNote, onNoteChange, onToggleHighlight, surlignagePerso, surlignageCouleur }) {
+  const isDidascalie = b.personnage === 'Didascalie';
+  if (isDidascalie) {
+    return <div className={cx('text-sm italic text-center my-3', t.textMuted)}>{b.texte}</div>;
+  }
+  const isCharHighlighted = !!surlignagePerso && b.personnage === surlignagePerso;
+  const wrapStyle = isCharHighlighted ? { backgroundColor: highlightColorBg(surlignageCouleur) } : undefined;
+  const textStyle = isCharHighlighted ? { color: HIGHLIGHT_TEXT_COLOR } : undefined;
+  return (
+    <div className={cx('my-4 py-1 px-2 -mx-2 rounded-lg', b.highlighted && 'border-l-4 border-amber-400 pl-3', b.highlighted && !isCharHighlighted && 'bg-amber-400/15')} style={wrapStyle}>
+      <div className="flex items-center justify-center gap-1.5">
+        <div className={cx('text-center font-bold uppercase tracking-wide', !isCharHighlighted && t.text)} style={textStyle}>
+          {b.personnage}
+          {b.didascalieEntree && <span className="italic font-normal normal-case" style={textStyle}> , {b.didascalieEntree}</span>}
+        </div>
+        {onToggleHighlight && (
+          <button onClick={() => onToggleHighlight(b.id)} title="Marquer cette réplique" className={cx('shrink-0', b.highlighted ? 'text-amber-600' : (!isCharHighlighted && t.textMuted))} style={isCharHighlighted && !b.highlighted ? { color: HIGHLIGHT_TEXT_COLOR, opacity: 0.6 } : undefined}>
+            <Icon name="tag" size={14} />
+          </button>
+        )}
+      </div>
+      <div className="leading-relaxed mt-1" style={textStyle}>{renderTexteAvecDidascalies(b.texte)}</div>
+      {showNote && (
+        <input value={b.note || ''} onChange={(e) => onNoteChange(b.id, e.target.value)} placeholder="+ note de régie (intention, déplacement…)"
+          className={cx('mt-2 w-full text-xs italic bg-transparent border-0 border-b outline-none pb-1 text-center', t.panelBorder, !isCharHighlighted && t.textMuted)}
+          style={isCharHighlighted ? { color: HIGHLIGHT_TEXT_COLOR, opacity: 0.7 } : undefined} />
+      )}
+    </div>
+  );
+}
+
+function IsolatedView({ blocks, monPersonnage, personnages, onChangePersonnage, fontSize, masked, showNotes, onNoteChange }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const switcher = personnages && personnages.length > 0 && (
+    <div className="flex flex-wrap gap-1.5 mb-3">
+      {personnages.map(p => (
+        <button key={p} onClick={() => onChangePersonnage(p)}
+          className={cx('shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-full font-medium', p === monPersonnage ? t.btnPrimary : cx(t.soft, t.textMuted))}>
+          {p}
+        </button>
+      ))}
+      {monPersonnage && (
+        <button onClick={() => onChangePersonnage('')} className={cx('shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-full font-medium flex items-center gap-1', t.soft, t.textMuted)}>
+          <Icon name="x" size={12} />Tous les personnages
+        </button>
+      )}
+    </div>
+  );
+  if (!monPersonnage) return <div>{switcher}<EmptyState text="Choisis d'abord ton personnage ci-dessus pour isoler ses répliques." /></div>;
+  const mine = blocks.filter(b => b.personnage === monPersonnage);
+  if (!mine.length) return <div>{switcher}<EmptyState text="Aucune réplique trouvée pour ce personnage — vérifie l'onglet Corriger." /></div>;
+  return (
+    <div className="space-y-2" style={{ fontSize: fontSize + 'px' }}>
+      {switcher}
+      <div className={cx('text-xs mb-1', t.textMuted)} style={{ fontSize: 12 }}>{mine.length} réplique(s) isolée(s) pour <strong className={t.accent}>{monPersonnage}</strong>, dans l'ordre du texte.</div>
+      {mine.map((b, i) => (
+        <div key={b.id} className={cx('rounded-xl p-3', t.soft)}>
+          <div className={cx('font-bold mb-1', t.accent)} style={{ fontSize: 11 }}>Réplique {i + 1}</div>
+          <div className="leading-relaxed"><MaskableText texte={b.texte} masked={masked} /></div>
+          {showNotes && (
+            <input value={b.note || ''} onChange={(e) => onNoteChange(b.id, e.target.value)} placeholder="+ note de régie"
+              className={cx('mt-2 w-full italic bg-transparent border-0 border-b outline-none pb-1', t.panelBorder, t.textMuted)} style={{ fontSize: 12 }} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TexteCompletView({ blocks, fontSize, showNotes, onNoteChange, onToggleHighlight, surlignagePerso, surlignageCouleur }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  return (
+    <div style={{ fontSize: fontSize + 'px' }}>
+      {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} showNote={showNotes} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleur={surlignageCouleur} />)}
+    </div>
+  );
+}
+
+function SceneTimer() {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [ms, setMs] = useState(0);
+  const [running, setRunning] = useState(false);
+  useEffect(() => {
+    if (!running) return;
+    const start = Date.now() - ms;
+    const id = setInterval(() => setMs(Date.now() - start), 250);
+    return () => clearInterval(id);
+  }, [running]);
+  const totalSec = Math.floor(ms / 1000);
+  const mm = String(Math.floor(totalSec / 60)).padStart(2, '0');
+  const ss = String(totalSec % 60).padStart(2, '0');
+  return (
+    <div className="flex items-center gap-3">
+      <div className={cx('text-2xl font-mono font-bold tabular-nums', t.accent)}>{mm}:{ss}</div>
+      <Btn variant={running ? 'danger' : 'primary'} onClick={() => setRunning(r => !r)}>{running ? 'Pause' : 'Démarrer'}</Btn>
+      <Btn variant="ghost" onClick={() => { setRunning(false); setMs(0); }}>Reset</Btn>
+    </div>
+  );
+}
+
+// Plein écran en overlay CSS (position fixed) plutôt que l'API Fullscreen native :
+// sur mobile (surtout iOS Safari) requestFullscreen() sur un élément quelconque
+// ne fonctionne pas ou pas de façon fiable — un overlay maison marche partout et
+// garantit un bouton de fermeture toujours visible et accessible d'un tap.
+function FullscreenReader({ mode, texte, personnages, monPersonnage, onChangePersonnage, fontSize, setFontSize, masked, setMasked, onNoteChange, onToggleHighlight, surlignagePerso, surlignageCouleur, onClose }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  return (
+    <div className={cx('fixed inset-0 z-50 overflow-y-auto modal-backdrop', t.bg)}>
+      <div className={cx('sticky top-0 z-10 flex items-center gap-2 px-3 py-2.5 shadow-sm', t.panel)}>
+        <input type="range" min="14" max="32" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} className="w-20 shrink-0" />
+        {mode !== 'prompteur' && mode !== 'original' && (
+          <button onClick={() => setMasked(m => !m)} className={cx('text-xs px-2.5 py-1.5 rounded-full font-medium shrink-0 whitespace-nowrap', masked ? t.btnPrimary : cx(t.soft, t.textMuted))}>Cache-mot</button>
+        )}
+        <div className="flex-1" />
+        <button onClick={onClose} title="Fermer le plein écran" className={cx('p-2.5 rounded-full shrink-0', t.soft)}><Icon name="x" size={20} /></button>
+      </div>
+      <div className="max-w-xl mx-auto px-4 py-4">
+        {mode === 'isoler' && <IsolatedView blocks={texte.blocks} monPersonnage={monPersonnage} personnages={personnages} onChangePersonnage={onChangePersonnage} fontSize={fontSize} masked={masked} showNotes={true} onNoteChange={onNoteChange} />}
+        {mode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleur={surlignageCouleur} />}
+        {mode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleur={surlignageCouleur} />}
+        {mode === 'original' && <div className="whitespace-pre-wrap leading-relaxed" style={{ fontSize: fontSize + 'px' }}>{texte.original}</div>}
+      </div>
+    </div>
+  );
+}
+
+function TexteDetail({ texte, dossiers, onUpdate, onBack, rate, volume, onRateChange, onVolumeChange }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [mode, setMode] = useState('isoler');
+  const [fontSize, setFontSize] = useState(18);
+  const [masked, setMasked] = useState(false);
+  const [showTimer, setShowTimer] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [newDossier, setNewDossier] = useState('');
+  const [fullscreen, setFullscreen] = useState(false);
+  const personnages = useMemo(() => Array.from(new Set(texte.blocks.map(b => b.personnage))).filter(p => p !== 'Didascalie'), [texte.blocks]);
+  const lecture = useMemo(() => estimerLecture(texte.blocks), [texte.blocks]);
+
+  const reassign = (blockId, newChar) => {
+    onUpdate({ ...texte, blocks: texte.blocks.map(b => b.id === blockId ? { ...b, personnage: newChar } : b) });
+  };
+  const setNote = (blockId, note) => {
+    onUpdate({ ...texte, blocks: texte.blocks.map(b => b.id === blockId ? { ...b, note } : b) });
+  };
+  const toggleHighlight = (blockId) => {
+    onUpdate({ ...texte, blocks: texte.blocks.map(b => b.id === blockId ? { ...b, highlighted: !b.highlighted } : b) });
+  };
+
+  const readingModes = mode === 'isoler' || mode === 'complet' || mode === 'prompteur' || mode === 'original';
+
+  return (
+    <div className="space-y-3 pb-4">
+      <button onClick={onBack} className={cx('flex items-center gap-1 text-sm', t.textMuted)}><Icon name="arrowLeft" size={16} />Retour aux textes</button>
+      <Card>
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <TextInput value={texte.titre} onChange={(e) => onUpdate({ ...texte, titre: e.target.value })}
+            className="!border-0 !bg-transparent !px-1 !py-1 -mx-1 text-xl font-bold rounded-lg flex-1 min-w-0" />
+          <Select value={texte.statutMemorisation} onChange={(e) => onUpdate({ ...texte, statutMemorisation: e.target.value })} className="w-auto shrink-0">
+            <option>À apprendre</option><option>En cours</option><option>Su</option>
+          </Select>
+        </div>
+        <div className={cx('text-xs mb-3', t.textMuted)}>{personnages.length} personnage(s) : {personnages.join(', ')} · {lecture.mots} mots · ~{lecture.normal} min à voix normale</div>
+        <Field label="Mon personnage" className="mb-3">
+          <Select value={texte.monPersonnage || ''} onChange={(e) => onUpdate({ ...texte, monPersonnage: e.target.value })}>
+            <option value="">— choisir —</option>
+            {personnages.map(p => <option key={p} value={p}>{p}</option>)}
+          </Select>
+        </Field>
+
+        <button className={cx('w-full flex items-center justify-between pt-2 border-t', t.panelBorder)} onClick={() => setShowDetails(s => !s)}>
+          <span className={cx('text-sm font-semibold', t.textMuted)}>Détails (dossier, auteur, type…)</span>
+          <Icon name={showDetails ? 'chevronUp' : 'chevronDown'} size={16} className={t.textMuted} />
+        </button>
+        {showDetails && (
+          <div className="mt-3">
+            <Field label="Dossier" className="mb-3">
+              <div className="flex gap-2">
+                <Select value={texte.dossier || ''} onChange={(e) => onUpdate({ ...texte, dossier: e.target.value })} className="flex-1">
+                  <option value="">Sans dossier</option>
+                  {dossiers.map(d => <option key={d} value={d}>{d}</option>)}
+                </Select>
+              </div>
+              <div className="flex gap-2 mt-2">
+                <TextInput placeholder="Nouveau dossier…" value={newDossier} onChange={(e) => setNewDossier(e.target.value)} />
+                <Btn variant="ghost" onClick={() => { if (newDossier.trim()) { onUpdate({ ...texte, dossier: newDossier.trim() }); setNewDossier(''); } }}>+</Btn>
+              </div>
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Auteur"><TextInput value={texte.auteur || ''} onChange={(e) => onUpdate({ ...texte, auteur: e.target.value })} /></Field>
+              <Field label="Compagnie / projet"><TextInput value={texte.compagnie || ''} onChange={(e) => onUpdate({ ...texte, compagnie: e.target.value })} /></Field>
+              <Field label="Registre">
+                <Select value={texte.registre || 'Neutre'} onChange={(e) => onUpdate({ ...texte, registre: e.target.value })}>
+                  <option>Neutre</option><option>Comique</option><option>Dramatique</option><option>Tragique</option>
+                </Select>
+              </Field>
+              <Field label="Type">
+                <Select value={texte.type || 'Scène'} onChange={(e) => onUpdate({ ...texte, type: e.target.value })}>
+                  <option>Monologue</option><option>Scène</option><option>Pièce complète</option>
+                </Select>
+              </Field>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <button className="w-full flex items-center justify-between" onClick={() => setShowTimer(s => !s)}>
+          <span className={cx('text-sm font-semibold flex items-center gap-1.5', t.textMuted)}><Icon name="clock" size={16} />Minuteur de scène</span>
+          <Icon name={showTimer ? 'chevronUp' : 'chevronDown'} size={16} />
+        </button>
+        {showTimer && <div className="mt-3"><SceneTimer /></div>}
+      </Card>
+
+      <div className="flex flex-wrap gap-2">
+        <Btn className="shrink-0 whitespace-nowrap" variant={mode === 'isoler' ? 'primary' : 'ghost'} onClick={() => setMode('isoler')}><Icon name="tag" size={16} />Isoler</Btn>
+        <Btn className="shrink-0 whitespace-nowrap" variant={mode === 'lecture' ? 'primary' : 'ghost'} onClick={() => setMode('lecture')}><Icon name="mic" size={16} />Répétiteur</Btn>
+        <Btn className="shrink-0 whitespace-nowrap" variant={mode === 'complet' ? 'primary' : 'ghost'} onClick={() => setMode('complet')}><Icon name="book" size={16} />Texte complet</Btn>
+        <Btn className="shrink-0 whitespace-nowrap" variant={mode === 'prompteur' ? 'primary' : 'ghost'} onClick={() => setMode('prompteur')}><Icon name="film" size={16} />Prompteur</Btn>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        <button onClick={() => setMode('correction')} className={cx('shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-full font-medium', mode === 'correction' ? t.btnPrimary : cx(t.soft, t.textMuted))}>Corriger</button>
+        {texte.original && <button onClick={() => setMode('original')} className={cx('shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-full font-medium', mode === 'original' ? t.btnPrimary : cx(t.soft, t.textMuted))}>Document original</button>}
+      </div>
+
+      {readingModes && (
+        <Card>
+          <div className="flex items-center gap-3 flex-wrap">
+            <Field label={'Taille du texte (' + fontSize + 'px)'} className="flex-1 min-w-[140px]">
+              <input type="range" min="14" max="28" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} className="w-full" />
+            </Field>
+            {mode !== 'prompteur' && mode !== 'original' && <Btn className="shrink-0 whitespace-nowrap" variant="ghost" onClick={() => setMasked(m => !m)}>{masked ? 'Afficher tout' : 'Mode cache-mot'}</Btn>}
+            <IconBtn name="film" title="Plein écran" onClick={() => setFullscreen(true)} />
+          </div>
+          {(mode === 'complet' || mode === 'prompteur') && (
+            <div className={cx('mt-3 pt-3 border-t', t.panelBorder)}>
+              <Field label="Surligner les répliques d'un personnage">
+                <Select value={texte.surlignagePerso || ''} onChange={(e) => onUpdate({ ...texte, surlignagePerso: e.target.value })}>
+                  <option value="">— aucun surlignage —</option>
+                  {personnages.map(p => <option key={p} value={p}>{p}</option>)}
+                </Select>
+              </Field>
+              {texte.surlignagePerso && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {HIGHLIGHT_COLORS.map(c => (
+                    <button key={c.key} title={c.label} onClick={() => onUpdate({ ...texte, surlignageCouleur: c.key })}
+                      className={cx('w-7 h-7 rounded-full shrink-0 flex items-center justify-center', (texte.surlignageCouleur || 'jaune') === c.key && 'ring-2 ring-offset-2', theme === 'sombre' && 'ring-offset-slate-900')}
+                      style={{ backgroundColor: c.bg }}>
+                      {(texte.surlignageCouleur || 'jaune') === c.key && <Icon name="check" size={14} className="text-slate-800" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
+
+      <div className={t.bg}>
+        {mode === 'isoler' && (
+          <Card className="mt-0"><IsolatedView blocks={texte.blocks} monPersonnage={texte.monPersonnage} personnages={personnages} onChangePersonnage={(p) => onUpdate({ ...texte, monPersonnage: p })} fontSize={fontSize} masked={masked} showNotes={true} onNoteChange={setNote} /></Card>
+        )}
+
+        {mode === 'complet' && (
+          <Card className="mt-0"><TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={setNote} onToggleHighlight={toggleHighlight} surlignagePerso={texte.surlignagePerso} surlignageCouleur={texte.surlignageCouleur} /></Card>
+        )}
+
+        {mode === 'prompteur' && (
+          <Card className="mt-0"><Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={toggleHighlight} surlignagePerso={texte.surlignagePerso} surlignageCouleur={texte.surlignageCouleur} /></Card>
+        )}
+
+        {mode === 'original' && (
+          <Card className="mt-0">
+            <div className={cx('text-xs mb-2', t.textMuted)}>Texte tel qu'importé, avant analyse — utile pour vérifier un passage si le découpage automatique s'est trompé.</div>
+            <div className={cx('rounded-2xl p-4 h-[32rem] overflow-y-auto leading-relaxed whitespace-pre-wrap shadow-sm', t.panel)} style={{ fontSize: fontSize + 'px' }}>{texte.original}</div>
+          </Card>
+        )}
+      </div>
+
+      {fullscreen && (
+        <FullscreenReader mode={mode} texte={texte} personnages={personnages} monPersonnage={texte.monPersonnage}
+          onChangePersonnage={(p) => onUpdate({ ...texte, monPersonnage: p })}
+          fontSize={fontSize} setFontSize={setFontSize} masked={masked} setMasked={setMasked}
+          onNoteChange={setNote} onToggleHighlight={toggleHighlight} surlignagePerso={texte.surlignagePerso} surlignageCouleur={texte.surlignageCouleur} onClose={() => setFullscreen(false)} />
+      )}
+
+      {mode === 'lecture' && (
+        <Card>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <Field label={'Vitesse (' + rate.toFixed(1) + 'x)'}>
+              <input type="range" min="0.5" max="2" step="0.1" value={rate} onChange={(e) => onRateChange(Number(e.target.value))} className="w-full" />
+            </Field>
+            <Field label={'Volume (' + Math.round(volume * 100) + '%)'}>
+              <input type="range" min="0" max="1" step="0.1" value={volume} onChange={(e) => onVolumeChange(Number(e.target.value))} className="w-full" />
+            </Field>
+          </div>
+          {texte.monPersonnage ? (
+            <RehearsalPlayer blocks={texte.blocks} monPersonnage={texte.monPersonnage} rate={rate} volume={volume} />
+          ) : <EmptyState text="Choisis d'abord ton personnage ci-dessus." />}
+        </Card>
+      )}
+
+      {mode === 'correction' && (
+        <Card>
+          <div className={cx('text-xs mb-3', t.textMuted)}>Réattribue une réplique si le découpage automatique s'est trompé, ou marque-la comme didascalie (indication de jeu, pas une réplique).</div>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {texte.blocks.map(b => (
+              <div key={b.id} className={cx('rounded-lg p-2', t.soft)}>
+                <Select value={b.personnage} onChange={(e) => reassign(b.id, e.target.value)} className="mb-1 w-auto text-xs py-1">
+                  {personnages.map(p => <option key={p} value={p}>{p}</option>)}
+                  <option value="Didascalie">— Didascalie —</option>
+                </Select>
+                <div className="text-xs">{b.texte}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+const AI_FORMAT_PROMPT = `Tu es un assistant qui reformate des textes de théâtre ou de scénario pour une appli de répétition de comédien. Reformate le texte que je te donne en suivant ces règles STRICTES, sans jamais changer les dialogues eux-mêmes ni rien résumer :
+
+1. Le nom de chaque personnage doit être écrit en MAJUSCULES, seul sur sa propre ligne, juste avant sa réplique.
+2. Laisse une ligne complètement vide entre chaque réplique (donc entre chaque personnage).
+3. Si une indication de jeu (didascalie) précède une réplique, mets-la juste après le nom, séparée par une virgule, en minuscules, sans parenthèses. Exemple : "MARIE, s'étirant paresseusement"
+4. Si une indication de jeu apparaît au milieu d'une réplique, garde-la entre parenthèses à l'intérieur du texte.
+5. Ne mets jamais de numéros de ligne, de mise en page complexe, ni de tableaux.
+6. Renvoie uniquement le texte reformaté, sans commentaire ni explication autour.
+
+Voici le texte à reformater :
+
+[COLLE TON TEXTE ICI]`;
+
+async function extractFileText(file) {
+  if (file.name.toLowerCase().endsWith('.txt')) return await file.text();
+  if (file.name.toLowerCase().endsWith('.docx') && window.mammoth) return (await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value;
+  if (file.name.toLowerCase().endsWith('.pdf') && window.pdfjsLib) return await extractPdfText(file);
+  return null;
+}
+
+function TexteImportForm({ onSave, onSaveMultiple, onCancel }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [titre, setTitre] = useState('');
+  const [contenu, setContenu] = useState('');
+  const [status, setStatus] = useState('');
+  const [promptCopied, setPromptCopied] = useState(false);
+  const fileRef = useRef(null);
+  const textAreaRef = useRef(null);
+
+  const copyText = async (text) => {
+    try { await navigator.clipboard.writeText(text); }
+    catch (err) {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e2) {}
+      document.body.removeChild(ta);
+    }
+  };
+
+  const copyAiPrompt = async () => {
+    await copyText(AI_FORMAT_PROMPT);
+    setPromptCopied(true);
+    setTimeout(() => setPromptCopied(false), 2500);
+  };
+
+  const pasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) setContenu(text);
+    } catch (err) {
+      setStatus("Impossible de lire le presse-papier automatiquement — colle avec un appui long dans le champ ci-dessous.");
+    }
+  };
+
+  const insertMarker = (marker) => {
+    const el = textAreaRef.current;
+    if (!el) { setContenu(c => c + ' ' + marker + ' '); return; }
+    const start = el.selectionStart, end = el.selectionEnd;
+    const next = contenu.slice(0, start) + ' ' + marker + ' ' + contenu.slice(end);
+    setContenu(next);
+    requestAnimationFrame(() => { el.focus(); const pos = start + marker.length + 2; el.setSelectionRange(pos, pos); });
+  };
+
+  const handleFiles = async (e) => {
+    const files = [...e.target.files];
+    if (!files.length) return;
+    if (files.length === 1) {
+      const file = files[0];
+      setStatus('Lecture du fichier…');
+      try {
+        const text = await extractFileText(file);
+        if (text === null) { setStatus("Format non reconnu ou bibliothèque indisponible — colle le texte manuellement ci-dessous."); return; }
+        setContenu(text);
+        setStatus('Texte importé, vérifie-le ci-dessous avant d\'enregistrer.');
+        if (!titre) setTitre(file.name.replace(/\.[^.]+$/, ''));
+      } catch (err) {
+        console.error(err);
+        setStatus("Échec de l'import automatique — colle le texte manuellement ci-dessous.");
+      }
+      return;
+    }
+    setStatus(`Analyse de ${files.length} fichiers…`);
+    const entries = [];
+    for (const file of files) {
+      try {
+        const text = await extractFileText(file);
+        if (text !== null) entries.push({ titre: file.name.replace(/\.[^.]+$/, ''), contenu: text });
+      } catch (err) { console.error(err); }
+    }
+    if (entries.length) {
+      onSaveMultiple(entries);
+    } else {
+      setStatus("Aucun des fichiers n'a pu être lu — importe-les un par un ou colle le texte manuellement.");
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <Field label="Titre"><TextInput value={titre} onChange={(e) => setTitre(e.target.value)} placeholder="Nom du texte / spectacle" /></Field>
+      <Field label="Importer un ou plusieurs fichiers (.txt, .docx, .pdf) — optionnel">
+        <input ref={fileRef} type="file" accept=".txt,.docx,.pdf" multiple onChange={handleFiles} className="text-xs" />
+        <div className={cx('text-xs mt-1', t.textMuted)}>Un seul fichier : tu peux vérifier le texte avant d'enregistrer. Plusieurs fichiers : chacun devient directement un texte séparé.</div>
+      </Field>
+      {status && <div className="text-xs opacity-70">{status}</div>}
+      <div className={cx('rounded-xl p-3 text-xs leading-relaxed', t.soft)}>
+        <strong className={t.accent}>Comment l'appli reconnaît les personnages :</strong> écris le nom en MAJUSCULES seul sur sa ligne juste avant la réplique, ou "NOM : réplique" sur la même ligne. Pas de panique si ce n'est pas parfait — tu pourras tout corriger ensuite dans l'onglet "Corriger".
+      </div>
+      <div className={cx('rounded-xl p-3 text-xs leading-relaxed', t.soft)}>
+        <strong className={t.accent}>Texte mal formaté ou compliqué ?</strong> Copie ce prompt, colle-le dans une IA (ChatGPT, Claude…) avec ton texte à la fin, puis colle sa réponse ici.
+        <div className="mt-2">
+          <Btn variant="ghost" onClick={copyAiPrompt}><Icon name={promptCopied ? 'check' : 'copy'} size={14} />{promptCopied ? 'Copié !' : 'Copier le prompt de formatage'}</Btn>
+        </div>
+      </div>
+      <Field label="Texte (colle ou vérifie ici)">
+        <div className="flex gap-1.5 mb-1.5 flex-wrap">
+          <Btn variant="ghost" onClick={pasteFromClipboard} title="Coller depuis le presse-papier"><Icon name="upload" size={14} />Coller</Btn>
+          <Btn variant="ghost" onClick={() => insertMarker('/')} title="Marqueur de respiration courte">/ souffle</Btn>
+          <Btn variant="ghost" onClick={() => insertMarker('//')} title="Marqueur de pause plus longue">// pause</Btn>
+        </div>
+        <TextArea ref={textAreaRef} rows={10} value={contenu} onChange={(e) => setContenu(e.target.value)} placeholder={"NOM PERSONNAGE\nSa réplique ici.\n\nAUTRE PERSONNAGE : sa réplique sur la même ligne."} />
+      </Field>
+      {contenu.trim() && (() => {
+        const preview = parseScript(contenu);
+        const perso = Array.from(new Set(preview.map(b => b.personnage)));
+        const ok = perso.length > 1 || (perso.length === 1 && perso[0] !== 'Non attribué');
+        return (
+          <div className={cx('rounded-xl p-3 text-xs', ok ? t.soft : 'bg-amber-500/15 text-amber-600')}>
+            {ok
+              ? <span>✓ {perso.length} personnage(s) détecté(s) : <strong>{perso.join(', ')}</strong> — {preview.length} réplique(s).</span>
+              : <span>⚠️ Aucun personnage détecté pour l'instant (tout est regroupé sous "Non attribué"). Vérifie le format du texte ci-dessus avant d'enregistrer.</span>}
+          </div>
+        );
+      })()}
+      <div className="flex justify-end gap-2 pt-2">
+        <Btn variant="ghost" onClick={onCancel}>Annuler</Btn>
+        <Btn disabled={!contenu.trim()} onClick={() => onSave(titre.trim() || 'Sans titre', contenu)}><Icon name="check" size={16} />Analyser &amp; enregistrer</Btn>
+      </div>
+    </div>
+  );
+}
+
+function TextesTab({ data, setData, openId, setOpenId }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [modal, setModal] = useState(false);
+  const [dossierModal, setDossierModal] = useState(false);
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState('Tous');
+  const [filterStatut, setFilterStatut] = useState('Tous');
+  const [filterDossier, setFilterDossier] = useState('Tous');
+  const [sortMode, setSortMode] = useState('alpha');
+
+  const dossiers = useMemo(() => {
+    const fromTextes = data.textes.map(tx => tx.dossier).filter(Boolean);
+    return Array.from(new Set([...data.dossiersTextes, ...fromTextes]));
+  }, [data.textes, data.dossiersTextes]);
+
+  const activeDossier = filterDossier !== 'Tous' && filterDossier !== 'Sans dossier' ? filterDossier : '';
+
+  const makeTexte = (titre, contenu) => {
+    const blocks = parseScript(contenu);
+    return { id: uid(), titre, contenu, original: contenu, blocks, personnages: Array.from(new Set(blocks.map(b => b.personnage))), monPersonnage: '', statutMemorisation: 'À apprendre', auteur: '', compagnie: '', registre: 'Neutre', type: 'Scène', dossier: activeDossier, dateModif: new Date().toISOString() };
+  };
+  const addTexte = (titre, contenu) => {
+    const nouveau = makeTexte(titre, contenu);
+    setData(d => ({ ...d, textes: [...d.textes, nouveau] }));
+    setModal(false);
+    setOpenId(nouveau.id);
+  };
+  const addMultipleTextes = (entries) => {
+    const nouveaux = entries.map(({ titre, contenu }) => makeTexte(titre, contenu));
+    setData(d => ({ ...d, textes: [...d.textes, ...nouveaux] }));
+    setModal(false);
+  };
+  const updateTexte = (updated) => setData(d => ({
+    ...d,
+    textes: d.textes.map(tx => tx.id === updated.id ? { ...updated, dateModif: new Date().toISOString() } : tx),
+    dossiersTextes: updated.dossier && !d.dossiersTextes.includes(updated.dossier) ? [...d.dossiersTextes, updated.dossier] : d.dossiersTextes,
+  }));
+  const removeTexte = (id) => setData(d => ({ ...d, textes: d.textes.filter(tx => tx.id !== id) }));
+  const duplicateTexte = (original) => {
+    const copy = { ...original, id: uid(), titre: original.titre + ' (copie)', dateModif: new Date().toISOString() };
+    setData(d => ({ ...d, textes: [...d.textes, copy] }));
+  };
+
+  const renameDossier = (oldName, newName) => {
+    if (!newName || newName === oldName) return;
+    setData(d => ({
+      ...d,
+      dossiersTextes: Array.from(new Set(d.dossiersTextes.map(x => x === oldName ? newName : x))),
+      textes: d.textes.map(tx => tx.dossier === oldName ? { ...tx, dossier: newName } : tx),
+    }));
+    if (filterDossier === oldName) setFilterDossier(newName);
+  };
+  const deleteDossier = (name) => {
+    const count = data.textes.filter(tx => tx.dossier === name).length;
+    const msg = count > 0 ? `${count} texte(s) sont dans "${name}" — ils repasseront en "Sans dossier". Continuer ?` : `Supprimer le dossier "${name}" ?`;
+    if (!window.confirm(msg)) return;
+    setData(d => ({
+      ...d,
+      dossiersTextes: d.dossiersTextes.filter(x => x !== name),
+      textes: d.textes.map(tx => tx.dossier === name ? { ...tx, dossier: '' } : tx),
+    }));
+    if (filterDossier === name) setFilterDossier('Tous');
+  };
+
+  const exportRepertoirePdf = () => {
+    const el = document.getElementById('print-root');
+    el.innerHTML = '';
+    const accent = '#0f766e';
+    const h2 = `font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:${accent};font-weight:700;border-bottom:1.5px solid ${accent};padding-bottom:4px;margin:22px 0 10px;`;
+    const p = data.profile;
+    const types = ['Monologue', 'Scène', 'Pièce complète'];
+    const grouped = types.map(ty => ({ ty, items: data.textes.filter(tx => (tx.type || 'Scène') === ty) })).filter(g => g.items.length);
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'font-family: Helvetica, Arial, sans-serif; color:#1a1a1a; max-width:760px; line-height:1.5;';
+    wrap.innerHTML = `
+      <div style="border-bottom:3px solid ${accent};padding-bottom:16px;">
+        <div style="font-size:26px;font-weight:700;letter-spacing:-0.3px;">${p.prenom || ''} ${p.nom || ''}</div>
+        <div style="font-size:14px;color:${accent};font-weight:600;margin-top:2px;">Répertoire — ${data.textes.length} texte(s)</div>
+      </div>
+      ${grouped.map(g => `
+        <h2 style="${h2}">${g.ty}</h2>
+        ${g.items.map(tx => {
+          const lecture = estimerLecture(tx.blocks);
+          const details = [tx.auteur, tx.compagnie, tx.registre && tx.registre !== 'Neutre' ? tx.registre : ''].filter(Boolean).join(' · ');
+          return `
+            <div style="font-size:13px;margin-bottom:7px;">
+              <div style="display:flex;justify-content:space-between;gap:12px;">
+                <strong>${tx.titre}</strong>
+                <span style="color:#888;white-space:nowrap;">~${lecture.normal} min</span>
+              </div>
+              ${details ? `<div style="color:#666;font-size:12px;">${details}</div>` : ''}
+            </div>
+          `;
+        }).join('')}
+      `).join('')}
+    `;
+    el.appendChild(wrap);
+    setTimeout(() => window.print(), 50);
+  };
+
+  const openTexte = data.textes.find(tx => tx.id === openId);
+  if (openTexte) {
+    return <TexteDetail texte={openTexte} dossiers={dossiers} onUpdate={updateTexte} onBack={() => setOpenId(null)}
+      rate={data.settings.rate} volume={data.settings.volume}
+      onRateChange={(v) => setData(d => ({ ...d, settings: { ...d.settings, rate: v } }))}
+      onVolumeChange={(v) => setData(d => ({ ...d, settings: { ...d.settings, volume: v } }))} />;
+  }
+
+  let filtered = data.textes.filter(tx => {
+    const matchType = filterType === 'Tous' || (tx.type || 'Scène') === filterType;
+    const matchStatut = filterStatut === 'Tous' || tx.statutMemorisation === filterStatut;
+    const matchDossier = filterDossier === 'Tous' || (filterDossier === 'Sans dossier' ? !tx.dossier : tx.dossier === filterDossier);
+    const matchSearch = !search || (tx.titre + ' ' + (tx.auteur || '') + ' ' + (tx.compagnie || '')).toLowerCase().includes(search.toLowerCase());
+    return matchType && matchStatut && matchDossier && matchSearch;
+  });
+  filtered = [...filtered].sort((a, b) => sortMode === 'alpha' ? a.titre.localeCompare(b.titre) : (b.dateModif || '').localeCompare(a.dateModif || ''));
+
+  return (
+    <div className="space-y-3 pb-4">
+      <Card>
+        <SectionTitle right={
+          <div className="flex gap-1.5 shrink-0">
+            {dossiers.length > 0 && <IconBtn name="settings" title="Gérer les dossiers" onClick={() => setDossierModal(true)} />}
+            {data.textes.length > 0 && <IconBtn name="download" title="Exporter mon répertoire (PDF)" onClick={exportRepertoirePdf} />}
+            <Btn onClick={() => setModal(true)}><Icon name="plus" size={16} />Texte</Btn>
+          </div>
+        }>Mes textes</SectionTitle>
+        {dossiers.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            {['Tous', 'Sans dossier', ...dossiers].map(d => (
+              <button key={d} onClick={() => setFilterDossier(d)} className={cx('shrink-0 whitespace-nowrap flex items-center gap-1 text-xs px-3 py-1.5 rounded-full font-medium', filterDossier === d ? t.btnPrimary : cx(t.soft, t.textMuted))}>
+                {d !== 'Tous' && d !== 'Sans dossier' && <Icon name="folder" size={12} />}{d}
+              </button>
+            ))}
+          </div>
+        )}
+        {data.textes.length > 3 && (
+          <>
+            <div className="flex gap-2 mb-2">
+              <div className="relative flex-1">
+                <Icon name="search" size={16} className={cx('absolute left-2.5 top-2.5', t.textMuted)} />
+                <TextInput placeholder="Rechercher un texte, un auteur…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
+              </div>
+              <IconBtn name="filter" title="Trier : alphabétique / dernière modification" onClick={() => setSortMode(m => m === 'alpha' ? 'recent' : 'alpha')} />
+            </div>
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
+              {['Tous', 'Monologue', 'Scène', 'Pièce complète'].map(ty => (
+                <button key={ty} onClick={() => setFilterType(ty)} className={cx('shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-full font-medium', filterType === ty ? t.btnPrimary : cx(t.soft, t.textMuted))}>{ty}</button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5 pb-2">
+              {['Tous', 'À apprendre', 'En cours', 'Su'].map(st => (
+                <button key={st} onClick={() => setFilterStatut(st)} className={cx('shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-full font-medium', filterStatut === st ? t.btnPrimary : cx(t.soft, t.textMuted))}>{st}</button>
+              ))}
+            </div>
+          </>
+        )}
+        {filtered.length === 0 ? <EmptyState icon="book" text={data.textes.length === 0 ? "Importe ou colle ton premier texte à répéter." : "Aucun texte ne correspond."} /> : (
+          <div className="space-y-2">
+            {filtered.map(tx => (
+              <div key={tx.id} onClick={() => setOpenId(tx.id)} className={cx('rounded-xl p-3 cursor-pointer', t.soft, t.cardHover)}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{tx.titre}</div>
+                    <div className={cx('text-xs', t.textMuted)}>{tx.auteur ? tx.auteur + ' · ' : ''}{tx.personnages.length} personnage(s){tx.monPersonnage ? ' · toi : ' + tx.monPersonnage : ''}</div>
+                    <div className="flex gap-1.5 mt-1.5 flex-wrap"><Pill>{tx.statutMemorisation}</Pill><Pill>{tx.type || 'Scène'}</Pill>{tx.dossier && <Pill>{tx.dossier}</Pill>}</div>
+                  </div>
+                  <div className="flex gap-0.5 shrink-0">
+                    <IconBtn name="copy" title="Dupliquer" onClick={(e) => { e.stopPropagation(); duplicateTexte(tx); }} />
+                    <ConfirmDeleteButton onConfirm={() => removeTexte(tx.id)} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+      {modal && (
+        <Modal title="Nouveau texte" onClose={() => setModal(false)}>
+          <TexteImportForm onSave={addTexte} onSaveMultiple={addMultipleTextes} onCancel={() => setModal(false)} />
+        </Modal>
+      )}
+      {dossierModal && <DossiersModal dossiers={dossiers} textes={data.textes} onRename={renameDossier} onDelete={deleteDossier} onClose={() => setDossierModal(false)} />}
+    </div>
+  );
+}
+
+/* ================= Onglet Entraînement ================= */
+
+function EntrainementTab({ data, setData }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [cat, setCat] = useState('Tous');
+  const cats = ['Tous', 'Respiration', 'Corps', 'Voix', 'Virelangues'];
+
+  const toggleFav = (id) => setData(d => ({ ...d, favorisExercices: d.favorisExercices.includes(id) ? d.favorisExercices.filter(x => x !== id) : [...d.favorisExercices, id] }));
+
+  const exos = cat === 'Tous' || cat === 'Virelangues' ? [] : EXERCICES.filter(e => e.categorie === cat);
+  const showAllExos = cat === 'Tous' ? EXERCICES : exos;
+  const catIcon = { Respiration: 'wind', Corps: 'dumbbell', Voix: 'mic' };
+  const badgeCls = theme === 'sombre' ? `bg-${currentAccent}-500/15 text-${currentAccent}-400` : `bg-${currentAccent}-50 text-${currentAccent}-700`;
+
+  return (
+    <div className="space-y-3 pb-4">
+      <Card className={cx('text-white', t.headerGrad)}>
+        <div className="font-bold text-lg">Corps, voix &amp; diction</div>
+        <div className="text-xs opacity-85 mt-0.5">Échauffe-toi avant de jouer, un exercice à la fois.</div>
+      </Card>
+
+      <div className="flex flex-wrap gap-1.5">
+        {cats.map(c => (
+          <button key={c} onClick={() => setCat(c)} className={cx('shrink-0 whitespace-nowrap text-xs px-3 py-1.5 rounded-full font-semibold', cat === c ? t.btnPrimary : cx(t.soft, t.textMuted))}>{c}</button>
+        ))}
+      </div>
+
+      {cat !== 'Virelangues' && (
+        <Card>
+          <SectionTitle>Exercices {cat !== 'Tous' ? '— ' + cat : ''}</SectionTitle>
+          <div className="space-y-2">
+            {showAllExos.map(ex => (
+              <div key={ex.id} className={cx('rounded-xl p-3 flex gap-3', t.soft)}>
+                <div className={cx('w-9 h-9 rounded-full flex items-center justify-center shrink-0', badgeCls)}>
+                  <Icon name={catIcon[ex.categorie]} size={16} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="font-semibold">{ex.titre}</div>
+                    <IconBtn name={data.favorisExercices.includes(ex.id) ? 'starFilled' : 'star'} onClick={() => toggleFav(ex.id)} title="Favori" className={cx('shrink-0 -mt-1 -mr-1', data.favorisExercices.includes(ex.id) ? t.accent : '')} />
+                  </div>
+                  <Pill>{ex.categorie}</Pill>
+                  <div className={cx('text-sm mt-1.5 leading-relaxed', t.textMuted)}>{ex.description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {(cat === 'Tous' || cat === 'Virelangues') && (
+        <Card>
+          <SectionTitle>Virelangues</SectionTitle>
+          <div className="space-y-2">
+            {VIRELANGUES.map((v, i) => (
+              <div key={i} className={cx('rounded-xl p-3 flex gap-2.5 items-start', t.soft)}>
+                <Icon name="quote" size={16} className={cx('shrink-0 mt-0.5', t.accent)} />
+                <div className="text-sm leading-relaxed">{v}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ================= Onglet Profil ================= */
+
+function readAndCompressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 800;
+        const scale = Math.min(1, maxW / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function SettingsModal({ data, settings, setData, onClose, onGoToProfil, lastBackupAt, onBackup }) {
+  const { theme, toggle } = useTheme();
+  const t = themeClasses(theme);
+  const importRef = useRef(null);
+  const mergeRef = useRef(null);
+
+  const setAccent = (accent) => setData(d => ({ ...d, settings: { ...d.settings, accent } }));
+  const setFontScale = (fontScale) => setData(d => ({ ...d, settings: { ...d.settings, fontScale } }));
+
+  const exportJson = () => {
+    setData(currentData => {
+      const blob = new Blob([JSON.stringify(currentData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'comedien-sauvegarde-' + new Date().toISOString().slice(0, 10) + '.json';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return currentData;
+    });
+    onBackup();
+  };
+
+  const importJson = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        if (!window.confirm('Restaurer ces données va remplacer toutes les données actuelles. Continuer ?')) return;
+        setData(mergeWithDefaults(parsed));
+        onClose();
+      } catch (err) { alert('Fichier invalide.'); }
+    };
+    reader.readAsText(file);
+  };
+
+  const resetAll = () => {
+    if (!window.confirm("Réinitialiser l'appli va supprimer TOUTES tes données (profil, contacts, cachets, textes…). Cette action est irréversible. Continuer ?")) return;
+    setData(defaultData());
+    onClose();
+  };
+
+  // Contrairement à "Restaurer" (remplace tout), ceci AJOUTE le contenu d'un fichier
+  // à ce qui existe déjà — utile pour intégrer un lot préparé (par ex. par une IA)
+  // sans perdre les données déjà sur le téléphone. Réutilise les mêmes détections de
+  // doublon que le reste de l'app (cachets, contacts, employeurs) pour rester sûr.
+  const mergeJson = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      let incoming;
+      try { incoming = JSON.parse(ev.target.result); } catch (err) { alert('Fichier invalide.'); return; }
+      // Calculé une seule fois, de façon synchrone, contre `data` (pas via l'updater
+      // fonctionnel de setData) : sinon le compte-rendu affiché lirait le rapport avant
+      // que React n'ait exécuté la fusion, et afficherait toujours des zéros.
+      const d = data;
+      const report = { cachets: 0, cachetsIgnores: 0, employeurs: 0, contacts: 0, contactsIgnores: 0, castings: 0, textes: 0, profil: false };
+      let employeurs = d.employeurs, cachets = d.cachets, contacts = d.contacts, categories = d.categories,
+        castings = d.castings, textes = d.textes, dossiersTextes = d.dossiersTextes, profile = d.profile;
+      if (incoming.profile) { profile = applyProfilePatch(profile, incoming.profile, false); report.profil = true; }
+      (incoming.employeurs || []).forEach(emp => {
+        const idx = employeurs.findIndex(e2 => e2.nom.toLowerCase() === (emp.nom || '').toLowerCase());
+        if (idx === -1) { employeurs = [...employeurs, { ...emp, id: uid() }]; report.employeurs++; }
+      });
+      (incoming.cachets || []).forEach(c => {
+        if (findDuplicateCachet(c, cachets)) { report.cachetsIgnores++; return; }
+        cachets = [...cachets, { ...c, id: uid() }];
+        report.cachets++;
+        const nom = (c.employeur || '').trim();
+        if (nom) {
+          const idx = employeurs.findIndex(e2 => e2.nom.toLowerCase() === nom.toLowerCase());
+          employeurs = idx === -1 ? [...employeurs, { id: uid(), nom, typeParDefaut: c.type }] : employeurs;
+        }
+      });
+      (incoming.contacts || []).forEach(c => {
+        if (findDuplicateContact(c, contacts)) { report.contactsIgnores++; return; }
+        contacts = [...contacts, { ...c, id: uid() }];
+        if (c.categorie && !categories.includes(c.categorie)) categories = [...categories, c.categorie];
+        report.contacts++;
+      });
+      (incoming.castings || []).forEach(c => { castings = [...castings, { ...c, id: uid() }]; report.castings++; });
+      (incoming.textes || []).forEach(tx => {
+        const contenu = tx.contenu || '';
+        const blocks = tx.blocks || parseScript(contenu);
+        const personnages = tx.personnages || Array.from(new Set(blocks.map(b => b.personnage)));
+        textes = [...textes, {
+          monPersonnage: '', statutMemorisation: 'À apprendre', auteur: '', compagnie: '', registre: 'Neutre', type: 'Scène',
+          ...tx, id: uid(), contenu, original: tx.original || contenu, blocks, personnages, dateModif: new Date().toISOString(),
+        }];
+        if (tx.dossier && !dossiersTextes.includes(tx.dossier)) dossiersTextes = [...dossiersTextes, tx.dossier];
+        report.textes++;
+      });
+      setData({ ...d, employeurs, cachets, contacts, categories, castings, textes, dossiersTextes, profile });
+      alert(`Ajouté : ${report.cachets} cachet(s), ${report.employeurs} employeur(s), ${report.contacts} contact(s), ${report.castings} casting(s), ${report.textes} texte(s)${report.profil ? ', profil complété' : ''}.` +
+        (report.cachetsIgnores || report.contactsIgnores ? `\n${report.cachetsIgnores} cachet(s) et ${report.contactsIgnores} contact(s) déjà présents ont été ignorés (doublons).` : ''));
+      if (mergeRef.current) mergeRef.current.value = '';
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <Modal title="Réglages" onClose={onClose}>
+      <div className="space-y-4">
+        <div>
+          <div className={cx('text-xs font-semibold mb-2', t.textMuted)}>Profil</div>
+          <Btn variant="ghost" className="w-full" onClick={onGoToProfil}><Icon name="user" size={16} />Modifier mon profil</Btn>
+        </div>
+        <div>
+          <div className={cx('text-xs font-semibold mb-2', t.textMuted)}>Apparence</div>
+          <div className="space-y-3">
+            <Btn variant="ghost" className="w-full" onClick={toggle}><Icon name={theme === 'sombre' ? 'sun' : 'moon'} size={16} />{theme === 'sombre' ? 'Passer en mode clair' : 'Passer en mode coulisses'}</Btn>
+            <div>
+              <div className={cx('text-xs mb-1.5', t.textMuted)}>Couleur d'accent</div>
+              <div className="flex flex-wrap gap-2">
+                {ACCENT_OPTIONS.map(opt => (
+                  <button key={opt.id} onClick={() => setAccent(opt.id)}
+                    className={cx('shrink-0 whitespace-nowrap flex items-center gap-1.5 text-xs px-3 py-2 rounded-full font-medium border-2',
+                      settings.accent === opt.id ? `border-${opt.id}-600` : 'border-transparent', t.soft)}>
+                    <span className={`w-3 h-3 rounded-full bg-${opt.id}-600`}></span>{opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className={cx('text-xs mb-1.5', t.textMuted)}>Taille du texte</div>
+              <div className="flex gap-2">
+                {[['petit', 'Petit'], ['normal', 'Normal'], ['grand', 'Grand']].map(([id, label]) => (
+                  <button key={id} onClick={() => setFontScale(id)}
+                    className={cx('flex-1 whitespace-nowrap text-sm px-3 py-2 rounded-full font-medium', (settings.fontScale || 'normal') === id ? t.btnPrimary : cx(t.soft, t.textMuted))}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div className={cx('text-xs font-semibold mb-2', t.textMuted)}>Sauvegarde</div>
+          <div className={cx('text-xs mb-2', t.textMuted)}>
+            {lastBackupAt ? `Dernière sauvegarde : ${fmtDate(lastBackupAt)}` : "Tu n'as jamais exporté tes données"} — le fichier téléchargé contient tout (profil, textes, cachets, contacts…), à garder pour transférer l'appli sur un nouveau téléphone.
+          </div>
+          <div className="space-y-2">
+            <Btn className="w-full" onClick={exportJson}><Icon name="save" size={16} />Sauvegarder toutes mes données</Btn>
+            <label className={cx('w-full flex items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-medium border cursor-pointer', t.panelBorder)}>
+              <Icon name="upload" size={16} />Restaurer mes données
+              <input ref={importRef} type="file" accept="application/json" onChange={importJson} className="hidden" />
+            </label>
+            <label className={cx('w-full flex items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-medium border cursor-pointer', t.panelBorder)}>
+              <Icon name="download" size={16} />Ajouter des données (fusion)
+              <input ref={mergeRef} type="file" accept="application/json" onChange={mergeJson} className="hidden" />
+            </label>
+            <div className={cx('text-xs', t.textMuted)}>"Ajouter" complète tes données actuelles sans rien effacer (les doublons sont ignorés) — utile pour intégrer un fichier préparé séparément, par ex. avec mon aide.</div>
+          </div>
+        </div>
+        <div>
+          <div className={cx('text-xs font-semibold mb-2', t.textMuted)}>Zone de danger</div>
+          <Btn variant="danger" className="w-full" onClick={resetAll}><Icon name="trash" size={16} />Réinitialiser toutes les données</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+const EXPERIENCE_TYPES = ['Long-métrage', 'Court-métrage', 'Série', 'Théâtre', 'Publicité', 'Voix off', 'Autre'];
+
+function ExperienceForm({ initial, onSave, onCancel }) {
+  const [v, setV] = useState(initial || { titre: '', role: '', annee: '', type: 'Long-métrage', structure: '' });
+  const set = (k) => (e) => setV({ ...v, [k]: e.target.value });
+  return (
+    <div className="space-y-3">
+      <Field label="Titre"><TextInput value={v.titre} onChange={set('titre')} placeholder="Nom du film / de la pièce / de la série" /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Rôle"><TextInput value={v.role} onChange={set('role')} /></Field>
+        <Field label="Année"><TextInput value={v.annee} onChange={set('annee')} placeholder="2026" /></Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Type">
+          <Select value={v.type} onChange={set('type')}>{EXPERIENCE_TYPES.map(ty => <option key={ty}>{ty}</option>)}</Select>
+        </Field>
+        <Field label="Réalisateur / Compagnie"><TextInput value={v.structure} onChange={set('structure')} /></Field>
+      </div>
+      <div className="flex justify-end gap-2 pt-2">
+        <Btn variant="ghost" onClick={onCancel}>Annuler</Btn>
+        <Btn disabled={!v.titre.trim()} onClick={() => onSave({ ...v, titre: v.titre.trim() })}><Icon name="check" size={16} />Enregistrer</Btn>
+      </div>
+    </div>
+  );
+}
+
+function FicheForm({ initial, experiences, onSave, onCancel }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [nom, setNom] = useState(initial ? initial.nom : '');
+  const [selected, setSelected] = useState(new Set(initial ? initial.experienceIds : experiences.map(e => e.id)));
+  const toggle = (id) => setSelected(s => { const next = new Set(s); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  return (
+    <div className="space-y-3">
+      <Field label="Nom de la fiche"><TextInput value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Théâtre, Pub & Cinéma…" autoFocus /></Field>
+      <Field label={`Expériences incluses (${selected.size}/${experiences.length})`}>
+        {experiences.length === 0 ? (
+          <div className={cx('text-xs', t.textMuted)}>Ajoute d'abord des expériences dans "Filmographie / expérience" ci-dessus.</div>
+        ) : (
+          <div className={cx('space-y-1.5 max-h-64 overflow-y-auto rounded-xl p-2.5', t.soft)}>
+            {experiences.map(e => (
+              <label key={e.id} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={selected.has(e.id)} onChange={() => toggle(e.id)} className="shrink-0" />
+                <span className="truncate min-w-0">{e.titre}{e.role ? ' — ' + e.role : ''}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </Field>
+      <div className="flex justify-end gap-2 pt-2">
+        <Btn variant="ghost" onClick={onCancel}>Annuler</Btn>
+        <Btn disabled={!nom.trim()} onClick={() => onSave({ nom: nom.trim(), experienceIds: Array.from(selected) })}><Icon name="check" size={16} />Enregistrer</Btn>
+      </div>
+    </div>
+  );
+}
+
+function ImportProfilModal({ onClose, onApply }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [extracted, setExtracted] = useState('');
+  const [structured, setStructured] = useState('');
+  const [status, setStatus] = useState('');
+  const [promptCopied, setPromptCopied] = useState(false);
+  const [forceOverwrite, setForceOverwrite] = useState(false);
+
+  const copyText = async (text) => {
+    try { await navigator.clipboard.writeText(text); }
+    catch (err) {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e2) {}
+      document.body.removeChild(ta);
+    }
+  };
+
+  const handleFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setStatus('Lecture du fichier…');
+    try {
+      if (file.name.toLowerCase().endsWith('.txt')) setExtracted(await file.text());
+      else if (file.name.toLowerCase().endsWith('.docx') && window.mammoth) {
+        const res = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+        setExtracted(res.value);
+      } else if (file.name.toLowerCase().endsWith('.pdf') && window.pdfjsLib) {
+        setExtracted(await extractPdfText(file));
+      } else {
+        setStatus('Format non reconnu — copie le texte de ton CV manuellement.');
+        return;
+      }
+      setStatus('Texte extrait ci-dessous — copie-le pour le coller dans une IA avec le prompt.');
+    } catch (err) {
+      console.error(err);
+      setStatus("Échec de l'extraction — copie le texte de ton CV manuellement.");
+    }
+  };
+
+  const copyAiPrompt = async () => {
+    await copyText(CV_FORMAT_PROMPT);
+    setPromptCopied(true);
+    setTimeout(() => setPromptCopied(false), 2500);
+  };
+
+  const apply = () => {
+    const fields = parseCvCanonicalText(structured);
+    const patch = cvFieldsToProfilePatch(fields);
+    onApply(patch, forceOverwrite);
+    onClose();
+  };
+
+  return (
+    <Modal title="Importer mon profil / CV" onClose={onClose}>
+      <div className="space-y-3">
+        <div className={cx('rounded-xl p-3 text-xs leading-relaxed', t.soft)}>
+          <strong className={t.accent}>1. Importe ton CV (optionnel)</strong> — extrait le texte d'un PDF/DOCX/TXT existant pour le réutiliser à l'étape suivante.
+          <div className="mt-2"><input type="file" accept=".txt,.docx,.pdf" onChange={handleFile} className="text-xs" /></div>
+          {status && <div className="mt-1.5 opacity-80">{status}</div>}
+          {extracted && (
+            <div className="mt-2">
+              <TextArea rows={4} value={extracted} onChange={(e) => setExtracted(e.target.value)} />
+              <Btn variant="ghost" className="mt-1.5" onClick={() => copyText(extracted)}><Icon name="copy" size={14} />Copier ce texte</Btn>
+            </div>
+          )}
+        </div>
+        <div className={cx('rounded-xl p-3 text-xs leading-relaxed', t.soft)}>
+          <strong className={t.accent}>2. Copie ce prompt</strong> et colle-le dans une IA (ChatGPT, Claude…) suivi de ton CV ou de tes infos en vrac.
+          <div className="mt-2"><Btn variant="ghost" onClick={copyAiPrompt}><Icon name={promptCopied ? 'check' : 'copy'} size={14} />{promptCopied ? 'Copié !' : 'Copier le prompt'}</Btn></div>
+        </div>
+        <Field label="3. Colle ici la réponse structurée de l'IA">
+          <TextArea rows={8} value={structured} onChange={(e) => setStructured(e.target.value)} placeholder={"PRENOM: Thomas\nNOM: Maurin\n..."} />
+        </Field>
+        <label className="flex items-center gap-2 text-xs">
+          <input type="checkbox" checked={forceOverwrite} onChange={(e) => setForceOverwrite(e.target.checked)} />
+          Remplacer les informations déjà renseignées (sinon, seuls les champs vides sont complétés)
+        </label>
+        <div className="flex justify-end gap-2 pt-2">
+          <Btn variant="ghost" onClick={onClose}>Annuler</Btn>
+          <Btn disabled={!structured.trim()} onClick={apply}><Icon name="check" size={16} />Analyser &amp; remplir mon profil</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ProfilTab({ data, setData }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const p = data.profile;
+  const [copied, setCopied] = useState(false);
+  const [expModal, setExpModal] = useState(null);
+  const [importModal, setImportModal] = useState(false);
+  const [ficheModal, setFicheModal] = useState(null);
+  const [expandedTypes, setExpandedTypes] = useState({});
+  const sortedExperiences = sortByYearDesc(p.cvPro.experiences, 'annee');
+  const experiencesByType = EXPERIENCE_TYPES.map(ty => ({ ty, items: sortedExperiences.filter(e => e.type === ty) })).filter(g => g.items.length);
+  const groupExperiences = (p.cvPro.experiences || []).length > 6;
+  const sortedFormation = sortByYearDesc(p.cvPro.formation, 'annee');
+  const addFormation = () => setCv({ formation: [...(p.cvPro.formation || []), { id: uid(), intitule: '', annee: '' }] });
+  const updateFormation = (id, patch) => setCv({ formation: (p.cvPro.formation || []).map(f => f.id === id ? { ...f, ...patch } : f) });
+  const removeFormation = (id) => setCv({ formation: (p.cvPro.formation || []).filter(f => f.id !== id) });
+
+  const copyFiche = async () => {
+    const m = p.mensurations;
+    const texte = [
+      `${p.prenom} ${p.nom}`.trim(),
+      p.metier,
+      `${p.email || ''}${p.telephone ? ' · ' + p.telephone : ''}`,
+      ...(p.liens || []).filter(l => l.url).map(l => `${l.label || 'Lien'} : ${normalizeUrl(l.url)}`),
+      `Taille ${m.taille || '?'} cm · Poids ${m.poids || '?'} kg · Veste ${m.veste || '?'} · Pantalon ${m.pantalon || '?'} · Pointure ${m.pointure || '?'}`,
+    ].filter(Boolean).join('\n');
+    try {
+      await navigator.clipboard.writeText(texte);
+    } catch (err) {
+      const ta = document.createElement('textarea');
+      ta.value = texte; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e2) {}
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const setP = (patch) => setData(d => ({ ...d, profile: { ...d.profile, ...patch } }));
+  const setMens = (patch) => setData(d => ({ ...d, profile: { ...d.profile, mensurations: { ...d.profile.mensurations, ...patch } } }));
+  const setLogi = (patch) => setData(d => ({ ...d, profile: { ...d.profile, logistique: { ...d.profile.logistique, ...patch } } }));
+  const setCv = (patch) => setData(d => ({ ...d, profile: { ...d.profile, cvPro: { ...d.profile.cvPro, ...patch } } }));
+  const addLien = () => setP({ liens: [...(p.liens || []), { id: uid(), label: '', url: '' }] });
+  const updateLien = (id, patch) => setP({ liens: (p.liens || []).map(l => l.id === id ? { ...l, ...patch } : l) });
+  const removeLien = (id) => setP({ liens: (p.liens || []).filter(l => l.id !== id) });
+
+  const upsertExperience = (v) => {
+    const experiences = p.cvPro.experiences || [];
+    setCv({ experiences: expModal.editingId ? experiences.map(e => e.id === expModal.editingId ? { ...e, ...v } : e) : [...experiences, { id: uid(), ...v }] });
+    setExpModal(null);
+  };
+  const removeExperience = (id) => setData(d => ({
+    ...d,
+    profile: {
+      ...d.profile,
+      cvPro: { ...d.profile.cvPro, experiences: (d.profile.cvPro.experiences || []).filter(e => e.id !== id) },
+      fiches: (d.profile.fiches || []).map(f => ({ ...f, experienceIds: f.experienceIds.filter(eid => eid !== id) })),
+    },
+  }));
+  const upsertFiche = (v) => {
+    const fiches = p.fiches || [];
+    setP({ fiches: ficheModal.editingId ? fiches.map(f => f.id === ficheModal.editingId ? { ...f, ...v } : f) : [...fiches, { id: uid(), ...v }] });
+    setFicheModal(null);
+  };
+  const removeFiche = (id) => setP({ fiches: (p.fiches || []).filter(f => f.id !== id) });
+
+  const applyImportedProfile = (patch, forceOverwrite) => {
+    setData(d => ({ ...d, profile: applyProfilePatch(d.profile, patch, forceOverwrite) }));
+  };
+
+  const onPhoto = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try { setP({ photo: await readAndCompressImage(file) }); } catch (err) { console.error(err); }
+  };
+
+  const exportPdf = (fiche) => {
+    const el = document.getElementById('print-root');
+    el.innerHTML = '';
+    const accent = '#0f766e';
+    const h2 = `font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:${accent};font-weight:700;border-bottom:1.5px solid ${accent};padding-bottom:4px;margin:22px 0 10px;`;
+    const allExps = p.cvPro.experiences || [];
+    const exps = fiche ? allExps.filter(e => fiche.experienceIds.includes(e.id)) : allExps;
+    const grouped = EXPERIENCE_TYPES.map(ty => ({ ty, items: sortByYearDesc(exps.filter(e => e.type === ty), 'annee') })).filter(g => g.items.length);
+    const formationTriee = sortByYearDesc(p.cvPro.formation, 'annee');
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'font-family: Helvetica, Arial, sans-serif; color:#1a1a1a; max-width:760px; line-height:1.5;';
+    wrap.innerHTML = `
+      <div style="display:flex;gap:22px;align-items:center;border-bottom:3px solid ${accent};padding-bottom:16px;">
+        ${p.photo ? `<img src="${p.photo}" style="width:110px;height:110px;object-fit:cover;border-radius:10px;flex-shrink:0;" />` : ''}
+        <div>
+          <div style="margin:0;font-size:26px;font-weight:700;letter-spacing:-0.3px;">${p.prenom || ''} ${p.nom || ''}</div>
+          <div style="font-size:14px;color:${accent};font-weight:600;margin-top:2px;">${p.metier || ''}${fiche ? ` — Fiche ${fiche.nom}` : ''}</div>
+          <div style="margin-top:8px;font-size:12.5px;color:#444;">
+            ${[p.email, p.telephone].filter(Boolean).join('&nbsp;&nbsp;·&nbsp;&nbsp;')}
+            ${(p.liens || []).filter(l => l.url).map(l => `<br/>${l.label || 'Lien'} : ${normalizeUrl(l.url)}`).join('')}
+          </div>
+        </div>
+      </div>
+
+      <h2 style="${h2}">Fiche technique</h2>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px 14px;font-size:12.5px;">
+        <div><span style="color:#888;">Taille</span><br/><strong>${p.mensurations.taille || '—'} cm</strong></div>
+        <div><span style="color:#888;">Poids</span><br/><strong>${p.mensurations.poids || '—'} kg</strong></div>
+        <div><span style="color:#888;">Veste</span><br/><strong>${p.mensurations.veste || '—'}</strong></div>
+        <div><span style="color:#888;">Pantalon</span><br/><strong>${p.mensurations.pantalon || '—'}</strong></div>
+        <div><span style="color:#888;">Pointure</span><br/><strong>${p.mensurations.pointure || '—'}</strong></div>
+        <div><span style="color:#888;">Tête</span><br/><strong>${p.mensurations.tete || '—'}</strong></div>
+        <div><span style="color:#888;">Cou</span><br/><strong>${p.mensurations.cou || '—'}</strong></div>
+        <div><span style="color:#888;">Poitrine</span><br/><strong>${p.mensurations.poitrine || '—'}</strong></div>
+        <div><span style="color:#888;">Tour de taille</span><br/><strong>${p.mensurations.tourTaille || '—'}</strong></div>
+      </div>
+      <div style="font-size:12.5px;margin-top:10px;color:#444;">Permis B : <strong>${p.logistique.permis ? 'Oui' : 'Non'}</strong>&nbsp;&nbsp;·&nbsp;&nbsp;Tatouage visible : <strong>${p.logistique.tatouage ? 'Oui' : 'Non'}</strong></div>
+
+      ${formationTriee.length ? `<h2 style="${h2}">Formation</h2><div style="font-size:13px;">${formationTriee.map(f => `${f.intitule}${f.annee ? ` (${f.annee})` : ''}`).join('<br/>')}</div>` : ''}
+      ${p.cvPro.langues ? `<h2 style="${h2}">Langues</h2><div style="font-size:13px;">${p.cvPro.langues}</div>` : ''}
+      ${p.cvPro.competences ? `<h2 style="${h2}">Compétences</h2><div style="font-size:13px;white-space:pre-wrap;">${p.cvPro.competences}</div>` : ''}
+
+      ${grouped.length ? `<h2 style="${h2}">Expérience / Filmographie</h2>` + grouped.map(g => `
+        <div style="margin-top:8px;">
+          <div style="font-size:11.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">${g.ty}</div>
+          ${g.items.map(e => `
+            <div style="font-size:13px;margin-bottom:5px;display:flex;justify-content:space-between;gap:12px;">
+              <span><strong>${e.titre}</strong>${e.role ? ` — ${e.role}` : ''}${e.structure ? `, ${e.structure}` : ''}</span>
+              <span style="color:#888;white-space:nowrap;">${e.annee || ''}</span>
+            </div>
+          `).join('')}
+        </div>
+      `).join('') : ''}
+    `;
+    el.appendChild(wrap);
+    setTimeout(() => window.print(), 50);
+  };
+
+  return (
+    <div className="space-y-3 pb-4">
+      <Card>
+        <SectionTitle>Photo</SectionTitle>
+        <div className="flex items-center gap-4">
+          <div className={cx('w-20 h-20 rounded-full overflow-hidden flex items-center justify-center border shrink-0', t.panelBorder)}>
+            {p.photo ? <img src={p.photo} className="w-full h-full object-cover" /> : <Icon name="camera" size={24} className={t.textMuted} />}
+          </div>
+          <label className={cx('text-sm px-4 py-2.5 rounded-full border cursor-pointer', t.panelBorder)}>
+            Changer la photo
+            <input type="file" accept="image/*" onChange={onPhoto} className="hidden" />
+          </label>
+        </div>
+        <Btn variant="ghost" className="w-full mt-3" onClick={() => setImportModal(true)}><Icon name="upload" size={16} />Importer mon profil / CV</Btn>
+      </Card>
+
+      <Card>
+        <SectionTitle>Fiche PDF</SectionTitle>
+        <div className={cx('text-xs mb-2', t.textMuted)}>Génère un document propre (mensurations, contact, CV) à envoyer aux directeurs de casting.</div>
+        <div className="space-y-2">
+          <Btn onClick={() => exportPdf()} className="w-full"><Icon name="download" size={16} />{(p.fiches || []).length > 0 ? 'Exporter ma fiche complète (PDF)' : 'Exporter ma fiche PDF'}</Btn>
+          <Btn variant="ghost" onClick={copyFiche} className="w-full"><Icon name={copied ? 'check' : 'save'} size={16} />{copied ? 'Copié !' : 'Copier ma présentation (texte)'}</Btn>
+        </div>
+
+        <div className={cx('border-t mt-4 pt-4', t.panelBorder)}>
+          <div className="text-sm font-semibold mb-1">Fiches spécialisées</div>
+          <div className={cx('text-xs mb-2', t.textMuted)}>Une version filtrée de ta fiche complète, avec seulement les expériences pertinentes pour un type de casting (ex. "Théâtre", "Pub &amp; Cinéma").</div>
+          {(p.fiches || []).length === 0 ? null : (
+            <div className="space-y-2 mb-2">
+              {p.fiches.map(f => (
+                <div key={f.id} className={cx('rounded-xl p-3 flex items-center justify-between gap-2', t.soft)}>
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{f.nom}</div>
+                    <div className={cx('text-xs', t.textMuted)}>{f.experienceIds.length} expérience(s) incluse(s)</div>
+                  </div>
+                  <div className="flex gap-0.5 shrink-0">
+                    <IconBtn name="download" title="Exporter en PDF" onClick={() => exportPdf(f)} />
+                    <IconBtn name="edit" title="Modifier" onClick={() => setFicheModal({ editingId: f.id })} />
+                    <ConfirmDeleteButton onConfirm={() => removeFiche(f.id)} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <Btn variant="ghost" className="w-full" onClick={() => setFicheModal({ editingId: null })}><Icon name="plus" size={16} />Créer une fiche spécialisée</Btn>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle>Identité &amp; contact</SectionTitle>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Prénom"><TextInput value={p.prenom} onChange={(e) => setP({ prenom: e.target.value })} /></Field>
+          <Field label="Nom"><TextInput value={p.nom} onChange={(e) => setP({ nom: e.target.value })} /></Field>
+          <Field label="Date de naissance"><TextInput type="date" value={p.dateNaissance} onChange={(e) => setP({ dateNaissance: e.target.value })} /></Field>
+          <Field label="Métier"><TextInput value={p.metier} onChange={(e) => setP({ metier: e.target.value })} /></Field>
+        </div>
+        <div className="space-y-3 mt-3">
+          <Field label="Email"><TextInput value={p.email} onChange={(e) => setP({ email: e.target.value })} /></Field>
+          <Field label="Téléphone"><TextInput value={p.telephone} onChange={(e) => setP({ telephone: e.target.value })} /></Field>
+        </div>
+        <Field label="Liens (démo, réseaux, site…)" className="mt-3">
+          <div className="space-y-2">
+            {(p.liens || []).map(l => (
+              <div key={l.id} className={cx('rounded-xl p-2.5 space-y-2', t.soft)}>
+                <div className="flex gap-2 items-center">
+                  <TextInput value={l.label} onChange={(e) => updateLien(l.id, { label: e.target.value })} placeholder="Démo, Instagram, site…" className="flex-1" />
+                  <ConfirmDeleteButton onConfirm={() => removeLien(l.id)} />
+                </div>
+                <TextInput value={l.url} onChange={(e) => updateLien(l.id, { url: e.target.value })} placeholder="URL" />
+                {l.url && <a href={normalizeUrl(l.url)} target="_blank" rel="noopener noreferrer" className={cx('text-xs underline underline-offset-2 inline-flex items-center gap-1', t.accent)}><Icon name="globe" size={12} />Ouvrir le lien</a>}
+              </div>
+            ))}
+            <Btn variant="ghost" className="w-full" onClick={addLien}><Icon name="plus" size={16} />Ajouter un lien</Btn>
+          </div>
+        </Field>
+      </Card>
+
+      <Card>
+        <SectionTitle>Mensurations</SectionTitle>
+        <div className="grid grid-cols-3 gap-3">
+          {[['taille', 'Taille (cm)'], ['poids', 'Poids (kg)'], ['veste', 'Veste'], ['pantalon', 'Pantalon'], ['pointure', 'Pointure'], ['tete', 'Tête'], ['cou', 'Cou'], ['poitrine', 'Poitrine'], ['tourTaille', 'Tour de taille']].map(([k, label]) => (
+            <Field key={k} label={label}><TextInput value={p.mensurations[k]} onChange={(e) => setMens({ [k]: e.target.value })} /></Field>
+          ))}
+        </div>
+        <div className="flex gap-4 mt-3">
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={p.logistique.permis} onChange={(e) => setLogi({ permis: e.target.checked })} />Permis B</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={p.logistique.tatouage} onChange={(e) => setLogi({ tatouage: e.target.checked })} />Tatouage</label>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle right={<Btn onClick={addFormation}><Icon name="plus" size={16} />Formation</Btn>}>Formation</SectionTitle>
+        {(!p.cvPro.formation || p.cvPro.formation.length === 0) ? <EmptyState icon="book" text="Aucune formation ajoutée pour l'instant." /> : (
+          <div className="space-y-2">
+            {sortedFormation.map(f => (
+              <div key={f.id} className={cx('rounded-xl p-2.5 flex items-center gap-2', t.soft)}>
+                <div className="flex-1 min-w-0 grid grid-cols-3 gap-2">
+                  <TextInput className="col-span-2" value={f.intitule} onChange={(e) => updateFormation(f.id, { intitule: e.target.value })} placeholder="École, stage…" />
+                  <TextInput value={f.annee} onChange={(e) => updateFormation(f.id, { annee: e.target.value })} placeholder="Année" />
+                </div>
+                <ConfirmDeleteButton onConfirm={() => removeFormation(f.id)} />
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <SectionTitle>Langues &amp; compétences</SectionTitle>
+        <div className="space-y-3">
+          <Field label="Langues"><TextInput value={p.cvPro.langues} onChange={(e) => setCv({ langues: e.target.value })} /></Field>
+          <Field label="Compétences (chant, danse, sport, instrument…)"><TextArea rows={6} value={p.cvPro.competences} onChange={(e) => setCv({ competences: e.target.value })} /></Field>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle right={<Btn onClick={() => setExpModal({ editingId: null })}><Icon name="plus" size={16} />Expérience</Btn>}>Filmographie / expérience</SectionTitle>
+        {(!p.cvPro.experiences || p.cvPro.experiences.length === 0) ? <EmptyState icon="film" text="Aucune expérience ajoutée pour l'instant." /> : !groupExperiences ? (
+          <div className="space-y-2">
+            {sortedExperiences.map(e => (
+              <div key={e.id} className={cx('rounded-xl p-3 flex items-start justify-between gap-2', t.soft)}>
+                <div className="min-w-0">
+                  <div className="font-medium" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{e.titre}</div>
+                  <div className={cx('text-xs', t.textMuted)}>{[e.role, e.structure].filter(Boolean).join(', ')}</div>
+                  <div className="flex gap-1.5 mt-1.5 flex-wrap"><Pill>{e.type}</Pill>{e.annee && <Pill>{e.annee}</Pill>}</div>
+                </div>
+                <div className="flex gap-0.5 shrink-0">
+                  <IconBtn name="edit" onClick={() => setExpModal({ editingId: e.id })} />
+                  <ConfirmDeleteButton onConfirm={() => removeExperience(e.id)} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {experiencesByType.map(g => (
+              <div key={g.ty}>
+                <button className="w-full flex items-center justify-between py-2" onClick={() => setExpandedTypes(s => ({ ...s, [g.ty]: !s[g.ty] }))}>
+                  <span className="text-sm font-medium flex items-center gap-1.5"><Icon name={{ Tournage: 'film', 'Théâtre': 'book', 'Voix off': 'mic' }[g.ty] || 'tag'} size={14} className={t.textMuted} />{g.ty} <span className={cx('font-normal', t.textMuted)}>({g.items.length})</span></span>
+                  <Icon name={expandedTypes[g.ty] ? 'chevronUp' : 'chevronDown'} size={16} className={t.textMuted} />
+                </button>
+                {expandedTypes[g.ty] && (
+                  <div className="space-y-2 mb-2">
+                    {g.items.map(e => (
+                      <div key={e.id} className={cx('rounded-xl p-3 flex items-start justify-between gap-2', t.soft)}>
+                        <div className="min-w-0">
+                          <div className="font-medium" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{e.titre}</div>
+                          <div className={cx('text-xs', t.textMuted)}>{[e.role, e.structure].filter(Boolean).join(', ')}</div>
+                          {e.annee && <div className="flex gap-1.5 mt-1.5 flex-wrap"><Pill>{e.annee}</Pill></div>}
+                        </div>
+                        <div className="flex gap-0.5 shrink-0">
+                          <IconBtn name="edit" onClick={() => setExpModal({ editingId: e.id })} />
+                          <ConfirmDeleteButton onConfirm={() => removeExperience(e.id)} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {expModal && (
+        <Modal title={expModal.editingId ? "Modifier l'expérience" : 'Nouvelle expérience'} onClose={() => setExpModal(null)}>
+          <ExperienceForm initial={expModal.editingId ? (p.cvPro.experiences || []).find(e => e.id === expModal.editingId) : null} onSave={upsertExperience} onCancel={() => setExpModal(null)} />
+        </Modal>
+      )}
+      {importModal && (
+        <ImportProfilModal onClose={() => setImportModal(false)} onApply={applyImportedProfile} />
+      )}
+      {ficheModal && (
+        <Modal title={ficheModal.editingId ? 'Modifier la fiche' : 'Nouvelle fiche spécialisée'} onClose={() => setFicheModal(null)}>
+          <FicheForm initial={ficheModal.editingId ? (p.fiches || []).find(f => f.id === ficheModal.editingId) : null} experiences={p.cvPro.experiences || []} onSave={upsertFiche} onCancel={() => setFicheModal(null)} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ================= App racine ================= */
+
+const TABS = [
+  { id: 'textes', label: 'Textes', icon: 'book' },
+  { id: 'entrainement', label: 'Entraînement', icon: 'dumbbell' },
+  { id: 'intermittent', label: 'Intermittent', icon: 'briefcase' },
+  { id: 'castings', label: 'Castings', icon: 'film' },
+  { id: 'contacts', label: 'Contacts', icon: 'users' },
+];
+
+function SearchResultGroup({ label, icon, items, renderLabel, onPick, t }) {
+  if (!items.length) return null;
+  return (
+    <div>
+      <div className={cx('text-xs font-semibold mb-1.5', t.textMuted)}>{label}</div>
+      <div className="space-y-1.5">
+        {items.map(item => (
+          <button key={item.id} onClick={() => onPick(item)} className={cx('w-full text-left flex items-center gap-2 rounded-xl p-2.5', t.soft)}>
+            <Icon name={icon} size={16} className={cx('shrink-0', t.accent)} />
+            <span className="text-sm truncate min-w-0">{renderLabel(item)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SearchModal({ data, onClose, onOpenTexte, onGoToTab }) {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const [q, setQ] = useState('');
+  const query = q.trim().toLowerCase();
+
+  const textResults = query ? data.textes.filter(tx => (tx.titre + ' ' + (tx.auteur || '') + ' ' + (tx.compagnie || '')).toLowerCase().includes(query)) : [];
+  const contactResults = query ? data.contacts.filter(c => (c.nom + ' ' + (c.fonction || '')).toLowerCase().includes(query)) : [];
+  const employeurResults = query ? data.employeurs.filter(e => e.nom.toLowerCase().includes(query)) : [];
+  const castingResults = query ? data.castings.filter(c => (c.projet + ' ' + (c.structure || '')).toLowerCase().includes(query)) : [];
+  const exerciceResults = query ? EXERCICES.filter(ex => ex.titre.toLowerCase().includes(query)) : [];
+  const noResults = query && ![textResults, contactResults, employeurResults, castingResults, exerciceResults].some(a => a.length);
+
+  return (
+    <Modal title="Rechercher" onClose={onClose}>
+      <div className="relative mb-3">
+        <Icon name="search" size={16} className={cx('absolute left-3.5 top-3.5', t.textMuted)} />
+        <TextInput autoFocus placeholder="Texte, contact, employeur, casting, exercice…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+      </div>
+      {!query && <EmptyState icon="search" text="Tape pour chercher dans tes textes, contacts, employeurs, castings et exercices." />}
+      {noResults && <EmptyState icon="search" text="Aucun résultat." />}
+      <div className="space-y-3 max-h-96 overflow-y-auto">
+        <SearchResultGroup label="Textes" icon="book" items={textResults} renderLabel={(tx) => tx.titre} onPick={(tx) => onOpenTexte(tx.id)} t={t} />
+        <SearchResultGroup label="Contacts" icon="users" items={contactResults} renderLabel={(c) => c.nom} onPick={() => onGoToTab('contacts')} t={t} />
+        <SearchResultGroup label="Employeurs" icon="briefcase" items={employeurResults} renderLabel={(e) => e.nom} onPick={() => onGoToTab('intermittent')} t={t} />
+        <SearchResultGroup label="Castings" icon="film" items={castingResults} renderLabel={(c) => c.projet} onPick={() => onGoToTab('castings')} t={t} />
+        <SearchResultGroup label="Exercices" icon="dumbbell" items={exerciceResults} renderLabel={(ex) => ex.titre} onPick={() => onGoToTab('entrainement')} t={t} />
+      </div>
+    </Modal>
+  );
+}
+
+const HISTORY_LIMIT = 20;
+
+function App() {
+  const [data, setDataRaw] = useState(loadData);
+  const [history, setHistory] = useState([]);
+  const [tab, setTab] = useState('textes');
+  const [showSettings, setShowSettings] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [openTexteId, setOpenTexteId] = useState(null);
+  const [lastBackupAt, setLastBackupAt] = useState(getLastBackup);
+  const recordBackup = () => { setLastBackup(); setLastBackupAt(new Date()); };
+
+  useEffect(() => { saveData(data); }, [data]);
+
+  // setData passe par ici partout dans l'app (une seule définition, ~30 composants
+  // reçoivent ce setData en prop) : chaque vrai changement de contenu est empilé pour
+  // pouvoir être annulé — "sauvegarde automatique à chaque action" côté utilisateur.
+  const setData = (updater) => {
+    setDataRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      if (hasDataChange(prev, next)) setHistory(h => [...h, prev].slice(-HISTORY_LIMIT));
+      return next;
+    });
+  };
+  const undo = () => {
+    if (!history.length) return;
+    const last = history[history.length - 1];
+    setHistory(h => h.slice(0, -1));
+    setDataRaw(last);
+  };
+
+  const theme = data.settings.theme;
+  currentAccent = data.settings.accent || 'teal';
+  useEffect(() => {
+    const px = { petit: 14, normal: 16, grand: 19 }[data.settings.fontScale] || 16;
+    document.documentElement.style.fontSize = px + 'px';
+  }, [data.settings.fontScale]);
+  const toggle = () => setData(d => ({ ...d, settings: { ...d.settings, theme: d.settings.theme === 'sombre' ? 'clair' : 'sombre' } }));
+  const t = themeClasses(theme);
+
+  const activeScreen = [...TABS, { id: 'profil', label: 'Profil', icon: 'user' }].find(s => s.id === tab) || TABS[0];
+
+  return (
+    <ThemeContext.Provider value={{ theme, toggle }}>
+      <div className={cx('min-h-screen', t.bg, t.text)}>
+        <header className={cx('sticky top-0 z-30 shadow-md text-white', t.headerGrad)}>
+          <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+            <div className="font-bold text-lg tracking-tight flex items-center gap-2 truncate min-w-0"><Icon name={activeScreen.icon} size={19} className="shrink-0" />{activeScreen.label}</div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {history.length > 0 && (
+                <button onClick={undo} title="Annuler la dernière action" className="p-1.5 rounded-full bg-white/15 hover:bg-white/25 transition active:scale-90">
+                  <Icon name="undo" size={16} />
+                </button>
+              )}
+              <button onClick={() => setShowSearch(true)} title="Rechercher" className="p-1.5 rounded-full bg-white/15 hover:bg-white/25 transition active:scale-90">
+                <Icon name="search" size={16} />
+              </button>
+              <button onClick={toggle} title="Changer de thème" className="p-1.5 rounded-full bg-white/15 hover:bg-white/25 transition active:scale-90">
+                <Icon name={theme === 'sombre' ? 'sun' : 'moon'} size={16} />
+              </button>
+              <button onClick={() => setShowSettings(true)} title="Réglages" className="p-1.5 rounded-full bg-white/15 hover:bg-white/25 transition active:scale-90">
+                <Icon name="settings" size={16} />
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-5 gap-1 px-2 pb-2">
+            {TABS.map(tb => (
+              <button key={tb.id} onClick={() => setTab(tb.id)}
+                className={cx('flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-2xl transition min-w-0',
+                  tab === tb.id ? (theme === 'sombre' ? `bg-[#0a0f0d] text-${currentAccent}-300` : `bg-white text-${currentAccent}-700`) : 'text-white/75 hover:bg-white/10')}>
+                <Icon name={tb.icon} size={17} />
+                <span className="text-[9.5px] leading-[11px] font-semibold text-center px-0.5">{tb.label}</span>
+              </button>
+            ))}
+          </div>
+        </header>
+
+        <main className="max-w-xl mx-auto px-4 pt-3 pb-8">
+          {tab === 'intermittent' && <Dashboard data={data} setData={setData} onOpenSettings={() => setShowSettings(true)} lastBackupAt={lastBackupAt} />}
+          {tab === 'castings' && <CastingsTab data={data} setData={setData} />}
+          {tab === 'contacts' && <ContactsTab data={data} setData={setData} />}
+          {tab === 'textes' && <TextesTab data={data} setData={setData} openId={openTexteId} setOpenId={setOpenTexteId} />}
+          {tab === 'entrainement' && <EntrainementTab data={data} setData={setData} />}
+          {tab === 'profil' && <ProfilTab data={data} setData={setData} />}
+        </main>
+
+        {showSettings && (
+          <SettingsModal data={data} settings={data.settings} setData={setData} onClose={() => setShowSettings(false)} onGoToProfil={() => { setTab('profil'); setShowSettings(false); }} lastBackupAt={lastBackupAt} onBackup={recordBackup} />
+        )}
+        {showSearch && (
+          <SearchModal data={data} onClose={() => setShowSearch(false)}
+            onOpenTexte={(id) => { setOpenTexteId(id); setTab('textes'); setShowSearch(false); }}
+            onGoToTab={(id) => { setTab(id); setShowSearch(false); }} />
+        )}
+      </div>
+    </ThemeContext.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
