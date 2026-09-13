@@ -4369,7 +4369,9 @@ const GUIDE_SECTIONS = [
     items: [
       "\"Écris ou importe un texte, choisis ton rôle, entraîne-toi.\"",
       "Bouton \"+ Texte\" : colle ton texte, ou importe un fichier (.txt, .docx, .pdf). Plusieurs fichiers d'un coup = un texte par fichier.",
-      "Les personnages sont trouvés tout seuls (nom en MAJUSCULES devant chaque réplique). Une ligne mal reconnue ? Ajoute [TITRE], [DIDASCALIE] ou [REGIE] devant elle, ou corrige à la main dans l'onglet \"Corriger\" — qui a aussi un bouton pour fusionner deux personnages en un seul, si le tri automatique en a créé deux par erreur.",
+      "Les personnages sont trouvés tout seuls (nom en MAJUSCULES devant chaque réplique). Une ligne mal reconnue à l'import ? Préfixe-la par [TITRE], [DIDASCALIE] ou [REGIE] avant de coller le texte, pour forcer la détection.",
+      "Une erreur repérée en LISANT (texte faux, ou mauvais personnage) ? Corrige-la sur place, sans chercher la réplique ailleurs — en mode \"Texte\" ou \"Prompteur\", chaque réplique a deux petites icônes : ✏️ pour corriger le texte, 👥 pour changer qui parle (choisir un personnage déjà existant, le marquer [DIDASCALIE], ou taper un nouveau nom).",
+      "Pour des corrections en masse (fusionner deux personnages qui n'en sont qu'un, réanalyser tout le texte après une mise à jour, remplacer entièrement le contenu), utilise l'onglet \"Corriger\".",
       "Choisis \"Mon personnage\" (un, plusieurs si tu joues deux rôles, ou \"Tout le texte\") — au-delà de 6 personnages, la liste se replie derrière un simple résumé (ex. \"2 personnages\") : tape dessus pour la déplier. Puis lis avec 4 modes (boutons en haut pendant la lecture) :",
       { type: 'grid', items: [
         { icon: 'tag', label: 'Isoler', text: 'Vois juste tes répliques.' },
@@ -4381,7 +4383,7 @@ const GUIDE_SECTIONS = [
       "\"Focus\" adoucit les répliques des autres personnages pour ne garder en pleine lumière que ceux choisis — pratique pour repérer facilement où reprendre après une réplique qui n'est pas la tienne.",
       "\"Surligner\" accepte plusieurs personnages à la fois, chacun avec sa propre couleur (choisie automatiquement, modifiable) — pratique pour repérer plusieurs voix d'un coup d'œil.",
       "Pendant la lecture : une note sur fond orange sous une réplique = ton indication de jeu ajoutée (intention, déplacement…). L'étiquette pose un signet, pour la retrouver vite.",
-      "Deux icônes plein écran : la première agrandit juste le texte, la seconde (icône coins ⤢) passe en plein écran scène — juste prompteur/focus/surligner en icônes, toujours accessibles.",
+      "Deux icônes plein écran : la première 🎞️ agrandit le texte affiché (et lance directement le Prompteur si tu n'es pas sur \"Isoler\" ou \"Document original\"), la seconde (icône coins ⤢) passe en plein écran scène — juste prompteur/focus/surligner en icônes, toujours accessibles.",
       "Icône caméra 📷 : mode self-tape — la caméra de ton appareil et le prompteur défilant se superposent, pour t'enregistrer en castings sans jongler entre deux applis. 3 tailles de prompteur (\"Normal\", \"Grand\", \"Très grand\") selon la longueur de tes répliques. La vidéo se télécharge directement (en .mp4 si ton appareil le permet, sinon en .webm), rien n'est envoyé nulle part.",
       "L'icône de téléchargement (en haut de la fiche) exporte le texte en PDF. Range tes textes par dossier (compagnie, projet…) depuis le menu \"···\".",
       "La recherche 🔍 (en haut de l'écran) trouve aussi une réplique précise à l'intérieur d'un texte, pas juste son titre.",
@@ -4452,6 +4454,8 @@ const GUIDE_SECTIONS = [
       "\"Sauvegarder\" télécharge un fichier avec tout (textes, cachets, contacts, profil) — à faire souvent, indispensable si tu changes de téléphone.",
       "\"Restaurer\" remplace tout par une sauvegarde. \"Ajouter\" complète sans rien effacer.",
       "Un petit point orange sur l'icône ⚙️ (en haut, sur n'importe quel onglet) apparaît si ça fait plus de 30 jours sans sauvegarde — il disparaît tout seul dès que tu en refais une.",
+      "L'appli s'installe comme une vraie appli, sur téléphone (Android, iPhone) ou ordinateur, sans passer par un store : un bandeau \"Installer\" apparaît en haut de l'écran (se ferme d'un tap si tu préfères ne pas l'utiliser — il ne revient plus ensuite). Elle s'ouvre alors en plein écran, avec sa propre icône, sans barre de navigateur.",
+      "\"Partager l'application\" envoie ce même lien à quelqu'un (SMS, WhatsApp, mail…) — chacun installe sa propre appli, avec ses propres données : rien de ce que tu as saisi n'est jamais partagé, tout reste enregistré uniquement sur l'appareil de chaque personne.",
     ],
   },
 ];
