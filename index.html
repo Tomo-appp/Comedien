@@ -5203,6 +5203,79 @@ function SearchModal({ data, onClose, onOpenTexte, onGoToTab }) {
 
 const HISTORY_LIMIT = 20;
 
+// Bandeau d'installation : le seul but est qu'un lien envoyé à quelqu'un ("installe
+// mon appli") lui montre directement le bon geste pour SON appareil, sans qu'on ait à
+// le lui expliquer à chaque fois. Sur Chrome/Edge (Android + PC), on capture
+// l'événement natif "beforeinstallprompt" pour proposer un vrai bouton "Installer" en
+// un tap — les autres navigateurs (Firefox, Safari) ne l'exposent pas, donc on retombe
+// sur une instruction texte adaptée à la plateforme détectée. Rien n'est envoyé nulle
+// part : tout se décide dans le navigateur de la personne qui regarde l'appli.
+function InstallBanner() {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const DISMISS_KEY = 'comedien-install-banner-dismissed-v1';
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem(DISMISS_KEY) === '1'; } catch (e) { return false; }
+  });
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [installed, setInstalled] = useState(() => {
+    try { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+    catch (e) { return false; }
+  });
+
+  useEffect(() => {
+    const onBeforeInstall = (e) => { e.preventDefault(); setDeferredPrompt(e); };
+    const onInstalled = () => { setInstalled(true); setDeferredPrompt(null); };
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  const dismiss = () => { setDismissed(true); try { localStorage.setItem(DISMISS_KEY, '1'); } catch (e) {} };
+
+  if (installed || dismissed) return null;
+
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isSafari = isIOS && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    try { await deferredPrompt.userChoice; } catch (e) {}
+    setDeferredPrompt(null);
+  };
+
+  return (
+    <div className={cx('mx-4 mt-3 p-3 rounded-2xl shadow-sm flex items-start gap-3', t.panel)}>
+      <div className={cx('w-9 h-9 rounded-full flex items-center justify-center shrink-0', theme === 'sombre' ? `bg-${currentAccent}-500/15 text-${currentAccent}-400` : `bg-${currentAccent}-50 text-${currentAccent}-700`)}>
+        <Icon name="download" size={16} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold mb-0.5">Installer Comédien sur cet appareil</div>
+        {deferredPrompt ? (
+          <>
+            <div className={cx('text-xs mb-2', t.textMuted)}>Accès direct depuis l'écran d'accueil, en plein écran.</div>
+            <Btn onClick={handleInstallClick} className="!text-xs !px-3 !py-1.5"><Icon name="download" size={13} />Installer</Btn>
+          </>
+        ) : isIOS ? (
+          <div className={cx('text-xs', t.textMuted)}>
+            {isSafari
+              ? <>Appuie sur <strong>Partager</strong> (le carré avec la flèche) puis <strong>« Sur l'écran d'accueil »</strong>.</>
+              : <>Ouvre ce lien avec <strong>Safari</strong> pour pouvoir l'installer.</>}
+          </div>
+        ) : (
+          <div className={cx('text-xs', t.textMuted)}>Menu du navigateur (⋮ ou ≡) → <strong>« Installer l'application »</strong>. Avec Chrome ça marche le mieux.</div>
+        )}
+      </div>
+      <button onClick={dismiss} className={cx('p-1 rounded-full shrink-0', t.textMuted)} title="Masquer"><Icon name="x" size={16} /></button>
+    </div>
+  );
+}
+
 function App() {
   const [data, setDataRaw] = useState(loadData);
   const [history, setHistory] = useState([]);
@@ -5318,6 +5391,8 @@ function App() {
             />
           </div>
         </header>
+
+        <InstallBanner />
 
         <main className="max-w-xl mx-auto px-4 pt-3 pb-8">
           <div key={tab} className={tabDirection === 'left' ? 'tabPane-left' : 'tabPane-right'}>
