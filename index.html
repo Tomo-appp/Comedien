@@ -3483,7 +3483,7 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
                 </Btn>
               )}
               <Btn className="shrink-0 whitespace-nowrap" variant={surlignagePersonnages.length > 0 ? 'primary' : 'ghost'} title="Colorer toutes les répliques d'un ou plusieurs personnages" onClick={() => setShowHighlightPanel(s => !s)}><Icon name="highlighter" size={16} />Surligner{surlignagePersonnages.length > 1 ? ` (${surlignagePersonnages.length})` : ''}</Btn>
-              <IconBtn name="film" title="Plein écran (texte agrandi)" onClick={() => setFullscreen(true)} />
+              <IconBtn name="film" title={mode === 'isoler' || mode === 'original' ? 'Plein écran (texte agrandi)' : 'Prompteur (plein écran)'} onClick={() => { if (mode === 'complet') setMode('prompteur'); setFullscreen(true); }} />
               <IconBtn name="maximize" title="Plein écran scène (icônes seules, prompteur/focus/surligner)" onClick={() => setTrueFullscreen(true)} />
               <IconBtn name="camera" title="Self-tape : caméra + prompteur superposés, pour t'enregistrer en castings" onClick={() => setSelfTape(true)} />
             </div>
