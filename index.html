@@ -2836,9 +2836,14 @@ function FullscreenReader({ mode, texte, monPersonnages, fontSize, setFontSize, 
   const t = themeClasses(theme);
   const [closing, setClosing] = useState(false);
   const handleClose = () => { setClosing(true); setTimeout(onClose, 180); };
+  // Mode prompteur : la fenêtre de défilement doit occuper toute la hauteur disponible
+  // du plein écran (comme en self-tape) au lieu de rester bridée à une hauteur fixe
+  // (h-[32rem]) pensée pour un usage inline dans la page — sinon le plein écran
+  // "prompteur" n'apporte presque rien de plus qu'un texte agrandi dans une petite boîte.
+  const isPrompteur = mode === 'prompteur';
   return (
-    <div className={cx('fixed inset-0 z-50 overflow-y-auto !mt-0', closing ? 'overlayOut' : 'overlayIn', t.bg)}>
-      <div className={cx('sticky top-0 z-10 flex items-center gap-2 px-3 py-2.5 shadow-sm', t.panel)}>
+    <div className={cx('fixed inset-0 z-50 flex flex-col !mt-0', isPrompteur ? 'overflow-hidden' : 'overflow-y-auto', closing ? 'overlayOut' : 'overlayIn', t.bg)}>
+      <div className={cx('sticky top-0 z-10 flex items-center gap-2 px-3 py-2.5 shadow-sm shrink-0', t.panel)}>
         <input type="range" min="14" max="32" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} className="w-20 shrink-0" />
         {mode !== 'original' && (
           <button onClick={() => setMasked(m => !m)} className={cx('text-xs px-2.5 py-1.5 rounded-full font-medium shrink-0 whitespace-nowrap', masked ? t.btnPrimary : cx(t.soft, t.textMuted))}>Cache-mot</button>
@@ -2846,10 +2851,10 @@ function FullscreenReader({ mode, texte, monPersonnages, fontSize, setFontSize, 
         <div className="flex-1" />
         <button onClick={handleClose} title="Fermer le plein écran" className={cx('p-2.5 rounded-full shrink-0', t.soft)}><Icon name="x" size={20} /></button>
       </div>
-      <div className="max-w-xl mx-auto px-4 py-4">
+      <div className={cx('max-w-xl mx-auto px-4 py-4 w-full', isPrompteur && 'flex-1 min-h-0 flex flex-col')}>
         {mode === 'isoler' && <IsolatedView blocks={texte.blocks} monPersonnages={monPersonnages} fontSize={fontSize} masked={masked} showNotes={true} onNoteChange={onNoteChange} />}
         {mode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />}
-        {mode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />}
+        {mode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} fill />}
         {mode === 'original' && <div className="whitespace-pre-wrap leading-relaxed" style={{ fontSize: fontSize + 'px' }}>{texte.original}</div>}
       </div>
     </div>
@@ -2923,10 +2928,14 @@ function PersonnageChips({ personnages, selected, onToggle, allLabel, onSelectAl
 // seules (fermer, prompteur, focus, surligner), toujours visible, pensée pour jouer une
 // scène sans être distrait par du texte de bouton. Sur les navigateurs qui bloquent
 // requestFullscreen (iOS Safari, webview...), l'overlay reste utilisable tel quel.
-function TrueFullscreenReader({ texte, monPersonnages, focusPersonnages, onToggleFocusPersonnage, surlignagePersonnages, onToggleSurlignagePersonnage, surlignageCouleurs, onChangeSurlignageCouleur, onToggleHighlight, personnages, onClose }) {
+function TrueFullscreenReader({ mode, texte, monPersonnages, focusPersonnages, onToggleFocusPersonnage, surlignagePersonnages, onToggleSurlignagePersonnage, surlignageCouleurs, onChangeSurlignageCouleur, onToggleHighlight, personnages, onClose }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
-  const [innerMode, setInnerMode] = useState('complet');
+  // Reprend le mode de lecture déjà actif (ex. l'onglet "Prompteur" en cours) au lieu de
+  // toujours rouvrir en "Texte complet" : sinon ce bouton, censé lancer le plein écran
+  // scène, obligeait à retoucher l'icône prompteur à l'intérieur pour retrouver ce qu'on
+  // avait déjà choisi juste avant.
+  const [innerMode, setInnerMode] = useState(mode === 'prompteur' ? 'prompteur' : 'complet');
   const [showFocusPanel, setShowFocusPanel] = useState(false);
   const [showHighlightPanel, setShowHighlightPanel] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -2947,9 +2956,12 @@ function TrueFullscreenReader({ texte, monPersonnages, focusPersonnages, onToggl
     };
   }, []);
 
+  // Même correction de hauteur que dans FullscreenReader : le prompteur doit occuper
+  // toute la place disponible du plein écran plutôt qu'une boîte de hauteur fixe.
+  const isPrompteur = innerMode === 'prompteur';
   return (
-    <div ref={rootRef} className={cx('fixed inset-0 z-50 overflow-y-auto !mt-0', closing ? 'overlayOut' : 'overlayIn', t.bg)}>
-      <div className={cx('sticky top-0 z-10 flex items-center justify-center gap-2 px-3 py-2.5 shadow-sm', t.panel)}>
+    <div ref={rootRef} className={cx('fixed inset-0 z-50 flex flex-col !mt-0', isPrompteur ? 'overflow-hidden' : 'overflow-y-auto', closing ? 'overlayOut' : 'overlayIn', t.bg)}>
+      <div className={cx('sticky top-0 z-10 flex items-center justify-center gap-2 px-3 py-2.5 shadow-sm shrink-0', t.panel)}>
         <IconBtn name="x" title="Fermer le plein écran" onClick={handleClose} />
         <div className="w-px h-6 shrink-0 opacity-20 bg-current" />
         <IconBtn name="film" title={innerMode === 'prompteur' ? 'Arrêter le défilement auto' : 'Prompteur (défilement auto)'} active={innerMode === 'prompteur'} onClick={() => setInnerMode(m => m === 'prompteur' ? 'complet' : 'prompteur')} />
@@ -2985,9 +2997,9 @@ function TrueFullscreenReader({ texte, monPersonnages, focusPersonnages, onToggl
           )}
         </div>
       )}
-      <div className="max-w-xl mx-auto px-4 py-4">
+      <div className={cx('max-w-xl mx-auto px-4 py-4 w-full', isPrompteur && 'flex-1 min-h-0 flex flex-col')}>
         {innerMode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={22} showNotes={false} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} />}
-        {innerMode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={22} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} />}
+        {innerMode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={22} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} fill />}
       </div>
     </div>
   );
@@ -3557,7 +3569,7 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
       )}
 
       {trueFullscreen && (
-        <TrueFullscreenReader texte={texte} personnages={personnages} monPersonnages={monPersonnages}
+        <TrueFullscreenReader mode={mode} texte={texte} personnages={personnages} monPersonnages={monPersonnages}
           focusPersonnages={focusPersonnages} onToggleFocusPersonnage={toggleFocusPersonnage}
           surlignagePersonnages={surlignagePersonnages} onToggleSurlignagePersonnage={toggleSurlignagePersonnage}
           surlignageCouleurs={surlignageCouleurs} onChangeSurlignageCouleur={changeSurlignageCouleur}
