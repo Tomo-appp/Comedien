@@ -644,6 +644,7 @@ function Icon({ name, size = 20, className = '' }) {
     case 'arrowLeft': return <svg {...c}><path d="M19 12H5M12 19l-7-7 7-7" /></svg>;
     case 'skip': return <svg {...c}><path d="M5 4l10 8-10 8V4z" /><path d="M19 5v14" /></svg>;
     case 'copy': return <svg {...c}><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 012-2h10" /></svg>;
+    case 'share': return <svg {...c}><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 10.5l6.8-3.9M8.6 13.5l6.8 3.9" /></svg>;
     case 'settings': return <svg {...c}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.6V21a2 2 0 11-4 0v-.2a1.7 1.7 0 00-1-1.5 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.6-1H3a2 2 0 110-4h.2a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.6V3a2 2 0 114 0v.2a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.6 1H21a2 2 0 110 4h-.2a1.7 1.7 0 00-1.5 1z" /></svg>;
     case 'highlighter': return <svg {...c}><path d="M9.5 17.5L4 20l2.5-5.5L15.5 5.5a2.1 2.1 0 013 3L9.5 17.5z" /><path d="M13 6l3.5 3.5" /><path d="M4 20h5" /></svg>;
     case 'eye': return <svg {...c}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></svg>;
@@ -4480,6 +4481,20 @@ function SettingsModal({ data, settings, setData, onClose, onGoToProfil, lastBac
   const setAccent = (accent) => setData(d => ({ ...d, settings: { ...d.settings, accent } }));
   const setFontScale = (fontScale) => setData(d => ({ ...d, settings: { ...d.settings, fontScale } }));
 
+  // Partage du lien de l'appli (pas des données) : navigator.share ouvre le
+  // sélecteur natif du téléphone (SMS, WhatsApp, mail...) — sur les appareils qui ne le
+  // supportent pas (surtout les ordinateurs), on retombe sur un copier-coller du lien.
+  const APP_SHARE_URL = 'https://tomo-appp.github.io/Comedien/';
+  const shareApp = async () => {
+    const shareData = { title: 'Comédien', text: "L'appli que j'utilise pour mes textes, mon intermittence et mes castings — chacun garde ses propres données, rien n'est partagé.", url: APP_SHARE_URL };
+    if (navigator.share) {
+      try { await navigator.share(shareData); } catch (e) { /* fenêtre fermée par la personne, rien à faire */ }
+      return;
+    }
+    try { await navigator.clipboard.writeText(APP_SHARE_URL); notify('Lien copié — colle-le dans un SMS, WhatsApp, un mail…', 'success'); }
+    catch (e) { notify(APP_SHARE_URL, 'info'); }
+  };
+
   const exportJson = () => {
     setData(currentData => {
       const blob = new Blob([JSON.stringify(currentData, null, 2)], { type: 'application/json' });
@@ -4579,6 +4594,10 @@ function SettingsModal({ data, settings, setData, onClose, onGoToProfil, lastBac
         <div>
           <div className={cx('text-xs font-semibold mb-2', t.textMuted)}>Aide</div>
           <Btn variant="ghost" className="w-full" onClick={() => setShowGuide(true)}><Icon name="help" size={16} />Comment ça marche ?</Btn>
+        </div>
+        <div>
+          <div className={cx('text-xs font-semibold mb-2', t.textMuted)}>Partager</div>
+          <Btn variant="ghost" className="w-full" onClick={shareApp}><Icon name="share" size={16} />Partager l'application</Btn>
         </div>
         <div>
           <div className={cx('text-xs font-semibold mb-2', t.textMuted)}>Profil</div>
