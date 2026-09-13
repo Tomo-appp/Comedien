@@ -4,6 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Comédien — Appli perso</title>
+<!-- PWA : ces balises + le manifest + le service worker (enregistré plus bas) sont ce
+     qui rend l'appli "installable" sur téléphone/ordinateur (icône sur l'écran d'accueil,
+     lancement en plein écran sans barre de navigateur) au lieu de rester un simple
+     favori. Voir manifest.webmanifest et sw.js à la racine du dépôt. -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d9488">
+<link rel="icon" type="image/png" href="icons/favicon-48.png">
+<!-- iOS ne lit pas le manifest pour l'icône/le mode plein écran : il lui faut ces
+     balises spécifiques en plus (support natif du manifest encore partiel sur Safari). -->
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Comédien">
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -5333,6 +5346,16 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+// Enregistre le service worker (voir sw.js) : condition technique pour qu'Android/
+// Chrome proposent "Installer l'application". Pas de service worker = pas d'install
+// possible sur ces navigateurs, même avec un manifest. iOS n'en a pas besoin pour
+// "Sur l'écran d'accueil" mais ça ne le gêne pas non plus.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
