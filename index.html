@@ -2689,7 +2689,7 @@ function RehearsalPlayer({ blocks: allBlocks, monPersonnages, rate, volume }) {
   );
 }
 
-function Teleprompter({ blocks, fontSize, onToggleHighlight, onEditTexte, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages, fill }) {
+function Teleprompter({ blocks, fontSize, onToggleHighlight, onEditTexte, onReassign, personnages, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages, fill }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   const [speed, setSpeed] = useState(60); // pixels / seconde
@@ -2726,7 +2726,7 @@ function Teleprompter({ blocks, fontSize, onToggleHighlight, onEditTexte, surlig
         </Field>
       </div>
       <div ref={scrollRef} className={cx('rounded-2xl p-4 overflow-y-auto shadow-sm', fill ? 'flex-1 min-h-0' : 'h-[32rem]', t.panel)} style={{ fontSize: fontSize + 'px' }}>
-        {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} theme={theme} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} compact={fill} />)}
+        {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} theme={theme} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} onReassign={onReassign} personnages={personnages} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} compact={fill} />)}
       </div>
     </div>
   );
@@ -2735,11 +2735,23 @@ function Teleprompter({ blocks, fontSize, onToggleHighlight, onEditTexte, surlig
 // Format "script" classique du théâtre français : nom du personnage centré en
 // capitales au-dessus de la réplique, texte en continu (pas de bulle de chat) —
 // remplace l'ancien style "carte" par bloc, qui ressemblait à une messagerie.
-function ScriptLine({ b, t, theme, showNote, onNoteChange, onToggleHighlight, onEditTexte, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages, compact }) {
+function ScriptLine({ b, t, theme, showNote, onNoteChange, onToggleHighlight, onEditTexte, onReassign, personnages, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages, compact }) {
   // Corriger directement une réplique en la lisant (bouton crayon à côté du signet) :
   // évite d'aller chercher l'onglet "Corriger", séparé de la lecture — l'erreur se
   // repère et se corrige d'un coup, texte sous les yeux, sans perdre sa place.
   const [editing, setEditing] = useState(false);
+  // Réattribuer le personnage au même endroit : le menu "Corriger" séparé oblige à
+  // faire défiler TOUTES les répliques pour retrouver celle qu'on vient de lire — ici
+  // la réplique reste sous les yeux, le nom devient une liste déroulante sur place.
+  const [reassigning, setReassigning] = useState(false);
+  const [addingNewChar, setAddingNewChar] = useState(false);
+  const [newCharDraft, setNewCharDraft] = useState('');
+  const confirmNewChar = () => {
+    const name = newCharDraft.trim().toUpperCase();
+    if (!name) return;
+    onReassign(b.id, name);
+    setReassigning(false); setAddingNewChar(false); setNewCharDraft('');
+  };
   const isDidascalie = b.personnage === 'Didascalie';
   if (isDidascalie) {
     return (
@@ -2758,17 +2770,40 @@ function ScriptLine({ b, t, theme, showNote, onNoteChange, onToggleHighlight, on
   const textStyle = isCharHighlighted ? { color: HIGHLIGHT_TEXT_COLOR } : undefined;
   return (
     <div id={'sl-' + b.id} className={cx(compact ? 'my-2' : 'my-5', 'py-1.5 px-2.5 -mx-2.5 rounded-xl transition-all', b.highlighted && 'border-l-4 border-amber-400 pl-3.5', b.highlighted && !isCharHighlighted && 'bg-amber-400/15', isCharHighlighted && 'shadow-sm', isDimmed && 'opacity-60 hover:opacity-100')} style={wrapStyle}>
-      <div className="flex items-center justify-center gap-1.5">
-        <div className={cx('text-center font-bold uppercase tracking-wide text-[13px]', !isCharHighlighted && t.text)} style={textStyle}>
-          {b.personnage}
-          {b.didascalieEntree && <span className="font-script italic font-normal normal-case tracking-normal" style={textStyle}>{didascalieSeparator(b.didascalieEntree)}{b.didascalieEntree}</span>}
-        </div>
-        {onEditTexte && (
+      <div className="flex items-center justify-center gap-1.5 flex-wrap">
+        {reassigning ? (
+          addingNewChar ? (
+            <div className="flex items-center gap-1 shrink-0">
+              <input autoFocus value={newCharDraft} onChange={(e) => setNewCharDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') confirmNewChar(); if (e.key === 'Escape') setAddingNewChar(false); }}
+                placeholder="Nom du personnage…" className={cx('text-xs px-2 py-1 rounded-lg border outline-none w-36', t.panelBorder)} />
+              <button onClick={confirmNewChar} title="Valider" className={cx('shrink-0', t.textMuted)}><Icon name="check" size={14} /></button>
+            </div>
+          ) : (
+            <Select value={b.personnage} onChange={(e) => { if (e.target.value === '__new__') { setAddingNewChar(true); } else { onReassign(b.id, e.target.value); setReassigning(false); } }}
+              className="!w-auto !py-1 !px-2 text-xs shrink-0">
+              {personnages.map(p => <option key={p} value={p}>{p}</option>)}
+              <option value="Didascalie">— Didascalie —</option>
+              <option value="__new__">+ Nouveau personnage…</option>
+            </Select>
+          )
+        ) : (
+          <div className={cx('text-center font-bold uppercase tracking-wide text-[13px]', !isCharHighlighted && t.text)} style={textStyle}>
+            {b.personnage}
+            {b.didascalieEntree && <span className="font-script italic font-normal normal-case tracking-normal" style={textStyle}>{didascalieSeparator(b.didascalieEntree)}{b.didascalieEntree}</span>}
+          </div>
+        )}
+        {onReassign && !addingNewChar && (
+          <button onClick={() => setReassigning(r => !r)} title={reassigning ? 'Annuler' : 'Qui parle ? (corriger le personnage)'} className={cx('shrink-0', reassigning ? 'text-amber-600' : (!isCharHighlighted && t.textMuted))} style={isCharHighlighted && !reassigning ? { color: HIGHLIGHT_TEXT_COLOR, opacity: 0.6 } : undefined}>
+            <Icon name={reassigning ? 'x' : 'users'} size={14} />
+          </button>
+        )}
+        {onEditTexte && !reassigning && (
           <button onClick={() => setEditing(e => !e)} title={editing ? 'Terminer la correction' : 'Corriger cette réplique'} className={cx('shrink-0', editing ? 'text-amber-600' : (!isCharHighlighted && t.textMuted))} style={isCharHighlighted && !editing ? { color: HIGHLIGHT_TEXT_COLOR, opacity: 0.6 } : undefined}>
             <Icon name={editing ? 'check' : 'edit'} size={14} />
           </button>
         )}
-        {onToggleHighlight && (
+        {onToggleHighlight && !reassigning && (
           <button onClick={() => onToggleHighlight(b.id)} title="Marquer cette réplique" className={cx('shrink-0', b.highlighted ? 'text-amber-600' : (!isCharHighlighted && t.textMuted))} style={isCharHighlighted && !b.highlighted ? { color: HIGHLIGHT_TEXT_COLOR, opacity: 0.6 } : undefined}>
             <Icon name="tag" size={14} />
           </button>
@@ -2822,12 +2857,12 @@ function IsolatedView({ blocks, monPersonnages, fontSize, masked, showNotes, onN
   );
 }
 
-function TexteCompletView({ blocks, fontSize, showNotes, onNoteChange, onToggleHighlight, onEditTexte, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages }) {
+function TexteCompletView({ blocks, fontSize, showNotes, onNoteChange, onToggleHighlight, onEditTexte, onReassign, personnages, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   return (
     <div style={{ fontSize: fontSize + 'px' }}>
-      {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} theme={theme} showNote={showNotes} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />)}
+      {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} theme={theme} showNote={showNotes} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} onReassign={onReassign} personnages={personnages} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />)}
     </div>
   );
 }
@@ -2859,7 +2894,7 @@ function SceneTimer() {
 // sur mobile (surtout iOS Safari) requestFullscreen() sur un élément quelconque
 // ne fonctionne pas ou pas de façon fiable — un overlay maison marche partout et
 // garantit un bouton de fermeture toujours visible et accessible d'un tap.
-function FullscreenReader({ mode, texte, monPersonnages, fontSize, setFontSize, masked, setMasked, onNoteChange, onToggleHighlight, onEditTexte, surlignagePerso, surlignageCouleurs, focusPerso, onClose }) {
+function FullscreenReader({ mode, texte, monPersonnages, fontSize, setFontSize, masked, setMasked, onNoteChange, onToggleHighlight, onEditTexte, onReassign, personnages, surlignagePerso, surlignageCouleurs, focusPerso, onClose }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   const [closing, setClosing] = useState(false);
@@ -2881,8 +2916,8 @@ function FullscreenReader({ mode, texte, monPersonnages, fontSize, setFontSize, 
       </div>
       <div className={cx('max-w-xl mx-auto px-4 py-4 w-full', isPrompteur && 'flex-1 min-h-0 flex flex-col')}>
         {mode === 'isoler' && <IsolatedView blocks={texte.blocks} monPersonnages={monPersonnages} fontSize={fontSize} masked={masked} showNotes={true} onNoteChange={onNoteChange} />}
-        {mode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />}
-        {mode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} fill />}
+        {mode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} onReassign={onReassign} personnages={personnages} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />}
+        {mode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} onReassign={onReassign} personnages={personnages} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} fill />}
         {mode === 'original' && <div className="whitespace-pre-wrap leading-relaxed" style={{ fontSize: fontSize + 'px' }}>{texte.original}</div>}
       </div>
     </div>
@@ -2956,7 +2991,7 @@ function PersonnageChips({ personnages, selected, onToggle, allLabel, onSelectAl
 // seules (fermer, prompteur, focus, surligner), toujours visible, pensée pour jouer une
 // scène sans être distrait par du texte de bouton. Sur les navigateurs qui bloquent
 // requestFullscreen (iOS Safari, webview...), l'overlay reste utilisable tel quel.
-function TrueFullscreenReader({ mode, texte, monPersonnages, focusPersonnages, onToggleFocusPersonnage, surlignagePersonnages, onToggleSurlignagePersonnage, surlignageCouleurs, onChangeSurlignageCouleur, onToggleHighlight, onEditTexte, personnages, onClose }) {
+function TrueFullscreenReader({ mode, texte, monPersonnages, focusPersonnages, onToggleFocusPersonnage, surlignagePersonnages, onToggleSurlignagePersonnage, surlignageCouleurs, onChangeSurlignageCouleur, onToggleHighlight, onEditTexte, onReassign, personnages, onClose }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   // Reprend le mode de lecture déjà actif (ex. l'onglet "Prompteur" en cours) au lieu de
@@ -3026,8 +3061,8 @@ function TrueFullscreenReader({ mode, texte, monPersonnages, focusPersonnages, o
         </div>
       )}
       <div className={cx('max-w-xl mx-auto px-4 py-4 w-full', isPrompteur && 'flex-1 min-h-0 flex flex-col')}>
-        {innerMode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={22} showNotes={false} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} />}
-        {innerMode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={22} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} fill />}
+        {innerMode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={22} showNotes={false} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} onReassign={onReassign} personnages={personnages} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} />}
+        {innerMode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={22} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} onReassign={onReassign} personnages={personnages} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} fill />}
       </div>
     </div>
   );
@@ -3578,11 +3613,11 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
         )}
 
         {mode === 'complet' && (
-          <Card className="mt-0"><TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={setNote} onToggleHighlight={toggleHighlight} onEditTexte={editTexte} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} masked={masked} monPersonnages={monPersonnages} /></Card>
+          <Card className="mt-0"><TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={setNote} onToggleHighlight={toggleHighlight} onEditTexte={editTexte} onReassign={reassign} personnages={personnages} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} masked={masked} monPersonnages={monPersonnages} /></Card>
         )}
 
         {mode === 'prompteur' && (
-          <Card className="mt-0"><Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={toggleHighlight} onEditTexte={editTexte} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} masked={masked} monPersonnages={monPersonnages} /></Card>
+          <Card className="mt-0"><Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={toggleHighlight} onEditTexte={editTexte} onReassign={reassign} personnages={personnages} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} masked={masked} monPersonnages={monPersonnages} /></Card>
         )}
 
         {mode === 'original' && (
@@ -3596,7 +3631,7 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
       {fullscreen && (
         <FullscreenReader mode={mode} texte={texte} monPersonnages={monPersonnages}
           fontSize={fontSize} setFontSize={setFontSize} masked={masked} setMasked={setMasked}
-          onNoteChange={setNote} onToggleHighlight={toggleHighlight} onEditTexte={editTexte} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} onClose={() => setFullscreen(false)} />
+          onNoteChange={setNote} onToggleHighlight={toggleHighlight} onEditTexte={editTexte} onReassign={reassign} personnages={personnages} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} onClose={() => setFullscreen(false)} />
       )}
 
       {trueFullscreen && (
@@ -3604,7 +3639,7 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
           focusPersonnages={focusPersonnages} onToggleFocusPersonnage={toggleFocusPersonnage}
           surlignagePersonnages={surlignagePersonnages} onToggleSurlignagePersonnage={toggleSurlignagePersonnage}
           surlignageCouleurs={surlignageCouleurs} onChangeSurlignageCouleur={changeSurlignageCouleur}
-          onToggleHighlight={toggleHighlight} onEditTexte={editTexte} onClose={() => setTrueFullscreen(false)} />
+          onToggleHighlight={toggleHighlight} onEditTexte={editTexte} onReassign={reassign} onClose={() => setTrueFullscreen(false)} />
       )}
 
       {selfTape && (
@@ -3629,6 +3664,10 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
 
       {mode === 'correction' && (
         <Card>
+          <div className={cx('text-xs mb-3 p-2.5 rounded-xl flex items-start gap-1.5', t.soft)}>
+            <Icon name="info" size={13} className={cx('shrink-0 mt-0.5', t.textMuted)} />
+            <span className={t.textMuted}>Pour corriger une réplique précise (texte ou "qui parle") sans tout faire défiler : utilise plutôt les icônes <Icon name="edit" size={11} className="inline" /> et <Icon name="users" size={11} className="inline" /> directement sur chaque réplique, en mode <strong>Texte</strong> ou <strong>Prompteur</strong>. Cette liste sert surtout aux corrections en masse ci-dessous.</span>
+          </div>
           <div className={cx('text-xs mb-3', t.textMuted)}>Réattribue une réplique si le découpage automatique s'est trompé, ou marque-la comme didascalie (indication de jeu, pas une réplique).</div>
           <div className={cx('flex items-center justify-between gap-2 mb-3 p-2.5 rounded-xl', t.soft)}>
             <div className="text-xs">Texte importé avant une mise à jour du détecteur ? <span className={t.textMuted}>Relance l'analyse pour bénéficier des dernières corrections.</span></div>
