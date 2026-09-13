@@ -2689,7 +2689,7 @@ function RehearsalPlayer({ blocks: allBlocks, monPersonnages, rate, volume }) {
   );
 }
 
-function Teleprompter({ blocks, fontSize, onToggleHighlight, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages, fill }) {
+function Teleprompter({ blocks, fontSize, onToggleHighlight, onEditTexte, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages, fill }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   const [speed, setSpeed] = useState(60); // pixels / seconde
@@ -2726,7 +2726,7 @@ function Teleprompter({ blocks, fontSize, onToggleHighlight, surlignagePerso, su
         </Field>
       </div>
       <div ref={scrollRef} className={cx('rounded-2xl p-4 overflow-y-auto shadow-sm', fill ? 'flex-1 min-h-0' : 'h-[32rem]', t.panel)} style={{ fontSize: fontSize + 'px' }}>
-        {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} theme={theme} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} compact={fill} />)}
+        {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} theme={theme} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} compact={fill} />)}
       </div>
     </div>
   );
@@ -2735,7 +2735,11 @@ function Teleprompter({ blocks, fontSize, onToggleHighlight, surlignagePerso, su
 // Format "script" classique du théâtre français : nom du personnage centré en
 // capitales au-dessus de la réplique, texte en continu (pas de bulle de chat) —
 // remplace l'ancien style "carte" par bloc, qui ressemblait à une messagerie.
-function ScriptLine({ b, t, theme, showNote, onNoteChange, onToggleHighlight, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages, compact }) {
+function ScriptLine({ b, t, theme, showNote, onNoteChange, onToggleHighlight, onEditTexte, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages, compact }) {
+  // Corriger directement une réplique en la lisant (bouton crayon à côté du signet) :
+  // évite d'aller chercher l'onglet "Corriger", séparé de la lecture — l'erreur se
+  // repère et se corrige d'un coup, texte sous les yeux, sans perdre sa place.
+  const [editing, setEditing] = useState(false);
   const isDidascalie = b.personnage === 'Didascalie';
   if (isDidascalie) {
     return (
@@ -2759,6 +2763,11 @@ function ScriptLine({ b, t, theme, showNote, onNoteChange, onToggleHighlight, su
           {b.personnage}
           {b.didascalieEntree && <span className="font-script italic font-normal normal-case tracking-normal" style={textStyle}>{didascalieSeparator(b.didascalieEntree)}{b.didascalieEntree}</span>}
         </div>
+        {onEditTexte && (
+          <button onClick={() => setEditing(e => !e)} title={editing ? 'Terminer la correction' : 'Corriger cette réplique'} className={cx('shrink-0', editing ? 'text-amber-600' : (!isCharHighlighted && t.textMuted))} style={isCharHighlighted && !editing ? { color: HIGHLIGHT_TEXT_COLOR, opacity: 0.6 } : undefined}>
+            <Icon name={editing ? 'check' : 'edit'} size={14} />
+          </button>
+        )}
         {onToggleHighlight && (
           <button onClick={() => onToggleHighlight(b.id)} title="Marquer cette réplique" className={cx('shrink-0', b.highlighted ? 'text-amber-600' : (!isCharHighlighted && t.textMuted))} style={isCharHighlighted && !b.highlighted ? { color: HIGHLIGHT_TEXT_COLOR, opacity: 0.6 } : undefined}>
             <Icon name="tag" size={14} />
@@ -2766,7 +2775,12 @@ function ScriptLine({ b, t, theme, showNote, onNoteChange, onToggleHighlight, su
         )}
       </div>
       <div className={cx('font-script', compact ? 'leading-normal mt-0.5' : 'leading-[1.7] mt-1.5')} style={textStyle}>
-        <MaskableText texte={b.texte} masked={masked && !!monPersonnages && monPersonnages.includes(b.personnage)} />
+        {editing ? (
+          <textarea value={b.texte} onChange={(e) => onEditTexte(b.id, e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setEditing(false); }} autoFocus rows={Math.max(2, Math.ceil(b.texte.length / 45))}
+            className={cx('w-full rounded-lg p-2 outline-none resize-y bg-transparent border', t.panelBorder)} style={textStyle} />
+        ) : (
+          <MaskableText texte={b.texte} masked={masked && !!monPersonnages && monPersonnages.includes(b.personnage)} />
+        )}
       </div>
       {showNote && (
         <div className="flex justify-center mt-2.5">
@@ -2808,12 +2822,12 @@ function IsolatedView({ blocks, monPersonnages, fontSize, masked, showNotes, onN
   );
 }
 
-function TexteCompletView({ blocks, fontSize, showNotes, onNoteChange, onToggleHighlight, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages }) {
+function TexteCompletView({ blocks, fontSize, showNotes, onNoteChange, onToggleHighlight, onEditTexte, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   return (
     <div style={{ fontSize: fontSize + 'px' }}>
-      {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} theme={theme} showNote={showNotes} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />)}
+      {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} theme={theme} showNote={showNotes} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />)}
     </div>
   );
 }
@@ -2845,7 +2859,7 @@ function SceneTimer() {
 // sur mobile (surtout iOS Safari) requestFullscreen() sur un élément quelconque
 // ne fonctionne pas ou pas de façon fiable — un overlay maison marche partout et
 // garantit un bouton de fermeture toujours visible et accessible d'un tap.
-function FullscreenReader({ mode, texte, monPersonnages, fontSize, setFontSize, masked, setMasked, onNoteChange, onToggleHighlight, surlignagePerso, surlignageCouleurs, focusPerso, onClose }) {
+function FullscreenReader({ mode, texte, monPersonnages, fontSize, setFontSize, masked, setMasked, onNoteChange, onToggleHighlight, onEditTexte, surlignagePerso, surlignageCouleurs, focusPerso, onClose }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   const [closing, setClosing] = useState(false);
@@ -2867,8 +2881,8 @@ function FullscreenReader({ mode, texte, monPersonnages, fontSize, setFontSize, 
       </div>
       <div className={cx('max-w-xl mx-auto px-4 py-4 w-full', isPrompteur && 'flex-1 min-h-0 flex flex-col')}>
         {mode === 'isoler' && <IsolatedView blocks={texte.blocks} monPersonnages={monPersonnages} fontSize={fontSize} masked={masked} showNotes={true} onNoteChange={onNoteChange} />}
-        {mode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />}
-        {mode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} fill />}
+        {mode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />}
+        {mode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} fill />}
         {mode === 'original' && <div className="whitespace-pre-wrap leading-relaxed" style={{ fontSize: fontSize + 'px' }}>{texte.original}</div>}
       </div>
     </div>
@@ -2942,7 +2956,7 @@ function PersonnageChips({ personnages, selected, onToggle, allLabel, onSelectAl
 // seules (fermer, prompteur, focus, surligner), toujours visible, pensée pour jouer une
 // scène sans être distrait par du texte de bouton. Sur les navigateurs qui bloquent
 // requestFullscreen (iOS Safari, webview...), l'overlay reste utilisable tel quel.
-function TrueFullscreenReader({ mode, texte, monPersonnages, focusPersonnages, onToggleFocusPersonnage, surlignagePersonnages, onToggleSurlignagePersonnage, surlignageCouleurs, onChangeSurlignageCouleur, onToggleHighlight, personnages, onClose }) {
+function TrueFullscreenReader({ mode, texte, monPersonnages, focusPersonnages, onToggleFocusPersonnage, surlignagePersonnages, onToggleSurlignagePersonnage, surlignageCouleurs, onChangeSurlignageCouleur, onToggleHighlight, onEditTexte, personnages, onClose }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   // Reprend le mode de lecture déjà actif (ex. l'onglet "Prompteur" en cours) au lieu de
@@ -3012,8 +3026,8 @@ function TrueFullscreenReader({ mode, texte, monPersonnages, focusPersonnages, o
         </div>
       )}
       <div className={cx('max-w-xl mx-auto px-4 py-4 w-full', isPrompteur && 'flex-1 min-h-0 flex flex-col')}>
-        {innerMode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={22} showNotes={false} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} />}
-        {innerMode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={22} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} fill />}
+        {innerMode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={22} showNotes={false} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} />}
+        {innerMode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={22} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} fill />}
       </div>
     </div>
   );
@@ -3316,6 +3330,9 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
   const toggleHighlight = (blockId) => {
     onUpdate({ ...texte, blocks: texte.blocks.map(b => b.id === blockId ? { ...b, highlighted: !b.highlighted } : b) });
   };
+  const editTexte = (blockId, nouveauTexte) => {
+    onUpdate({ ...texte, blocks: texte.blocks.map(b => b.id === blockId ? { ...b, texte: nouveauTexte } : b) });
+  };
   // Signets = répliques marquées (icône étiquette) : repères rapides vers une entrée,
   // une réplique clé... Cliquer y saute directement dans le Texte complet.
   const signets = useMemo(() => texte.blocks.filter(b => b.highlighted), [texte.blocks]);
@@ -3561,11 +3578,11 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
         )}
 
         {mode === 'complet' && (
-          <Card className="mt-0"><TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={setNote} onToggleHighlight={toggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} masked={masked} monPersonnages={monPersonnages} /></Card>
+          <Card className="mt-0"><TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={setNote} onToggleHighlight={toggleHighlight} onEditTexte={editTexte} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} masked={masked} monPersonnages={monPersonnages} /></Card>
         )}
 
         {mode === 'prompteur' && (
-          <Card className="mt-0"><Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={toggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} masked={masked} monPersonnages={monPersonnages} /></Card>
+          <Card className="mt-0"><Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={toggleHighlight} onEditTexte={editTexte} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} masked={masked} monPersonnages={monPersonnages} /></Card>
         )}
 
         {mode === 'original' && (
@@ -3579,7 +3596,7 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
       {fullscreen && (
         <FullscreenReader mode={mode} texte={texte} monPersonnages={monPersonnages}
           fontSize={fontSize} setFontSize={setFontSize} masked={masked} setMasked={setMasked}
-          onNoteChange={setNote} onToggleHighlight={toggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} onClose={() => setFullscreen(false)} />
+          onNoteChange={setNote} onToggleHighlight={toggleHighlight} onEditTexte={editTexte} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} onClose={() => setFullscreen(false)} />
       )}
 
       {trueFullscreen && (
@@ -3587,7 +3604,7 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
           focusPersonnages={focusPersonnages} onToggleFocusPersonnage={toggleFocusPersonnage}
           surlignagePersonnages={surlignagePersonnages} onToggleSurlignagePersonnage={toggleSurlignagePersonnage}
           surlignageCouleurs={surlignageCouleurs} onChangeSurlignageCouleur={changeSurlignageCouleur}
-          onToggleHighlight={toggleHighlight} onClose={() => setTrueFullscreen(false)} />
+          onToggleHighlight={toggleHighlight} onEditTexte={editTexte} onClose={() => setTrueFullscreen(false)} />
       )}
 
       {selfTape && (
