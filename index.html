@@ -773,11 +773,11 @@ function ToolTile({ icon, label, color = 'slate', active, onClick, title }) {
   const c = TOOL_TILE_COLORS[color] || TOOL_TILE_COLORS.slate;
   return (
     <button type="button" title={title} onClick={onClick}
-      className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-2xl text-center transition active:scale-95 w-full min-w-0">
-      <span className={cx('w-8 h-8 rounded-full flex items-center justify-center shrink-0', active ? c.full : (theme === 'sombre' ? c.softDark : c.soft))}>
-        <Icon name={icon} size={15} />
+      className="flex flex-col items-center justify-center gap-0.5 py-1.5 px-1 rounded-2xl text-center transition active:scale-95 w-full min-w-0">
+      <span className={cx('w-7 h-7 rounded-full flex items-center justify-center shrink-0', active ? c.full : (theme === 'sombre' ? c.softDark : c.soft))}>
+        <Icon name={icon} size={13} />
       </span>
-      <span className="text-[11px] font-semibold leading-none truncate max-w-full">{label}</span>
+      <span className="text-[10px] font-semibold leading-tight truncate max-w-full">{label}</span>
     </button>
   );
 }
