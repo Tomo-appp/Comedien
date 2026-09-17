@@ -9,7 +9,7 @@
 // compromis qui rend l'appli installée aussi rapide qu'un onglet de navigateur classique
 // (v1 de ce fichier attendait le réseau à chaque fois avant d'afficher quoi que ce soit,
 // ce qui la rendait plus lente qu'un simple onglet Firefox : ne pas y revenir).
-const CACHE_NAME = 'comedien-shell-v2';
+const CACHE_NAME = 'comedien-shell-v3';
 const SHELL_FILES = ['./', './index.html', './manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {

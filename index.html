@@ -748,6 +748,40 @@ function IconBtn({ name, onClick, title, className = '', danger, active, pop }) 
   );
 }
 
+// Pastille d'icône colorée + libellé, pour une rangée d'actions qui se ressemblaient
+// trop en simples boutons "ghost" gris (même fond discret, même icône plate) : on ne
+// devinait pas au premier coup d'œil ce que chaque bouton allait faire. Une couleur
+// dédiée par action (mémoire visuelle : bleu = focus, ambre = surligner, rouge =
+// enregistrement…) rend chaque bouton reconnaissable d'un coup d'œil, avant même de
+// lire son texte. `active` bascule la pastille en couleur pleine (au lieu du fond
+// pastel discret) pour que l'état ON/OFF des bascules (cache-mot, focus…) saute aux
+// yeux, cohérent avec le reste de l'appli (Surligner utilise déjà ce code couleur).
+const TOOL_TILE_COLORS = {
+  slate:  { soft: 'bg-slate-100 text-slate-600',   softDark: 'bg-slate-500/15 text-slate-300',   full: 'bg-slate-500 text-white' },
+  blue:   { soft: 'bg-blue-50 text-blue-700',      softDark: 'bg-blue-500/15 text-blue-400',     full: 'bg-blue-500 text-white' },
+  amber:  { soft: 'bg-amber-50 text-amber-700',    softDark: 'bg-amber-500/15 text-amber-400',   full: 'bg-amber-500 text-white' },
+  violet: { soft: 'bg-violet-50 text-violet-700',  softDark: 'bg-violet-500/15 text-violet-400', full: 'bg-violet-500 text-white' },
+  indigo: { soft: 'bg-indigo-50 text-indigo-700',  softDark: 'bg-indigo-500/15 text-indigo-400', full: 'bg-indigo-500 text-white' },
+  rose:   { soft: 'bg-rose-50 text-rose-700',      softDark: 'bg-rose-500/15 text-rose-400',     full: 'bg-rose-500 text-white' },
+};
+// Disposition icône-dessus / libellé-dessous, calée sur celle de SegmentedTabs (les 4
+// onglets de lecture juste au-dessus) : une grille de colonnes égales aligne les
+// pastilles proprement, là où l'ancienne rangée en flex-wrap retombait à la ligne de
+// façon inégale selon la longueur de chaque libellé.
+function ToolTile({ icon, label, color = 'slate', active, onClick, title }) {
+  const { theme } = useTheme();
+  const c = TOOL_TILE_COLORS[color] || TOOL_TILE_COLORS.slate;
+  return (
+    <button type="button" title={title} onClick={onClick}
+      className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-2xl text-center transition active:scale-95 min-w-0">
+      <span className={cx('w-8 h-8 rounded-full flex items-center justify-center shrink-0', active ? c.full : (theme === 'sombre' ? c.softDark : c.soft))}>
+        <Icon name={icon} size={15} />
+      </span>
+      <span className="text-[11px] font-semibold leading-none truncate max-w-full">{label}</span>
+    </button>
+  );
+}
+
 // Menu "..." pour regrouper des actions secondaires (peu utilisées) sans
 // encombrer l'en-tête d'un onglet — se ferme au clic en dehors.
 function DropdownMenu({ items, title = 'Plus d\'options' }) {
@@ -1756,80 +1790,84 @@ function Dashboard({ data, setData }) {
         <div className="mt-2 text-xs rounded-lg p-2 bg-black/20">
           {actualisationOuverte ? `Fin d'actualisation dans ${joursActualisation} jour(s) (le 15).` : `Actualisation dans ${joursAvantOuverture} jour(s) (le 28).`}
         </div>
-        {/* Bloc à part entière (pas juste une ligne discrète sous l'actualisation) —
-            plusieurs retours montrent que la date anniversaire passait inaperçue :
-            libellé toujours visible, date en gros, bouton "Modifier" explicite plutôt
-            qu'un simple texte cliquable. */}
-        <div className="mt-2 rounded-lg p-2.5 bg-black/25">
-          <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">Date anniversaire (réévaluation des droits)</div>
-          {(!data.dateFinDroits || editReexamen) ? (
-            <div className="flex items-center justify-between gap-2 flex-wrap mt-1.5">
-              <span className="text-xs opacity-90">{data.dateFinDroits ? 'Nouvelle date :' : 'À renseigner :'}</span>
-              <input
-                type="date"
-                autoFocus
-                value={data.dateFinDroits || ''}
-                onChange={(e) => {
-                  const nextVal = e.target.value;
-                  setData(d => ({
-                    ...d,
-                    dateFinDroits: nextVal,
-                    // Toute nouvelle date remplaçant une ancienne archive l'ancienne dans
-                    // l'historique — que le changement vienne du bouton "Prochaine date"
-                    // (projection +365 jours) ou d'une date saisie à la main (ex. la vraie
-                    // date confirmée par France Travail) : les deux comptent comme un vrai
-                    // changement d'année d'intermittence.
-                    reexamHistory: (d.dateFinDroits && nextVal && nextVal !== d.dateFinDroits) ? [...d.reexamHistory, d.dateFinDroits] : d.reexamHistory,
-                  }));
-                  setEditReexamen(false);
-                }}
-                className="rounded-lg px-2 py-1 text-xs shrink-0 bg-white/15 border border-white/25 text-white [color-scheme:dark]"
-              />
-              {editReexamen && <button onClick={() => setEditReexamen(false)} className="text-xs underline underline-offset-2 opacity-70 shrink-0">Annuler</button>}
-            </div>
-          ) : (() => {
-            const jours = Math.ceil((new Date(data.dateFinDroits) - new Date()) / 86400000);
-            const ok = statsFinDroits.heures >= SEUIL_HEURES;
-            return (
-              <div className="mt-1">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div>
-                    <div className="text-base font-semibold">{fmtDate(data.dateFinDroits)}</div>
-                    <div className="text-xs opacity-80">{jours >= 0 ? `dans ${jours} jour(s)` : 'échue'}</div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {jours < 0 && (
-                      <button onClick={renewDateFinDroits} className="text-xs font-semibold px-2.5 py-1.5 rounded-full bg-white/20">Nouvelle date +1 an</button>
-                    )}
-                    <button onClick={() => setEditReexamen(true)} title="Remplacer par une autre date" className="text-xs font-medium px-2.5 py-1.5 rounded-full bg-white/15 flex items-center gap-1">
-                      <Icon name="edit" size={12} />Modifier
-                    </button>
-                  </div>
+      </Card>
+
+      {/* Carte à part entière (pas nichée dans le dégradé du haut) — plusieurs
+          retours montrent que la date anniversaire passait inaperçue mêlée aux
+          autres alertes, et que la carte du haut devenait illisible à force
+          d'empiler progression, plafond, actualisation et date anniversaire au
+          même niveau visuel. Sortie ici, elle garde exactement les mêmes calculs
+          et le même comportement, juste avec la respiration d'une carte à elle. */}
+      <Card>
+        <div className={cx('text-[11px] font-semibold uppercase tracking-wide', t.textMuted)}>Date anniversaire (réévaluation des droits)</div>
+        {(!data.dateFinDroits || editReexamen) ? (
+          <div className="flex items-center justify-between gap-2 flex-wrap mt-1.5">
+            <span className={cx('text-xs', t.textMuted)}>{data.dateFinDroits ? 'Nouvelle date :' : 'À renseigner :'}</span>
+            <input
+              type="date"
+              autoFocus
+              value={data.dateFinDroits || ''}
+              onChange={(e) => {
+                const nextVal = e.target.value;
+                setData(d => ({
+                  ...d,
+                  dateFinDroits: nextVal,
+                  // Toute nouvelle date remplaçant une ancienne archive l'ancienne dans
+                  // l'historique — que le changement vienne du bouton "Prochaine date"
+                  // (projection +365 jours) ou d'une date saisie à la main (ex. la vraie
+                  // date confirmée par France Travail) : les deux comptent comme un vrai
+                  // changement d'année d'intermittence.
+                  reexamHistory: (d.dateFinDroits && nextVal && nextVal !== d.dateFinDroits) ? [...d.reexamHistory, d.dateFinDroits] : d.reexamHistory,
+                }));
+                setEditReexamen(false);
+              }}
+              className={cx('rounded-lg px-2 py-1 text-xs shrink-0 border', t.input)}
+            />
+            {editReexamen && <button onClick={() => setEditReexamen(false)} className={cx('text-xs underline underline-offset-2 shrink-0', t.textMuted)}>Annuler</button>}
+          </div>
+        ) : (() => {
+          const jours = Math.ceil((new Date(data.dateFinDroits) - new Date()) / 86400000);
+          const ok = statsFinDroits.heures >= SEUIL_HEURES;
+          const okColor = ok ? (theme === 'sombre' ? 'text-emerald-400' : 'text-emerald-600') : (theme === 'sombre' ? 'text-amber-400' : 'text-amber-600');
+          return (
+            <div className="mt-1">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <div className="text-base font-semibold">{fmtDate(data.dateFinDroits)}</div>
+                  <div className={cx('text-xs', t.textMuted)}>{jours >= 0 ? `dans ${jours} jour(s)` : 'échue'}</div>
                 </div>
-                {/* Compteur "depuis le dernier renouvellement" : purement informatif, PAS
-                    le calcul d'éligibilité officiel (qui reste toujours la fenêtre glissante
-                    de 12 mois, ci-dessous et en haut de page) — répond directement à "est-ce
-                    que ça repart de zéro à la nouvelle date anniversaire ?" sans jamais
-                    fausser le vrai calcul des 507h. N'a de sens qu'après au moins un vrai
-                    renouvellement (reexamHistory non vide) : avant ça, "Période en cours"
-                    couvrirait tout l'historique depuis toujours, pas "depuis un reset". */}
-                {data.reexamHistory.length > 0 && recapParPeriode[0] && (
-                  <div className={cx('flex items-center gap-1.5 text-xs mt-1.5 pt-1.5 border-t border-white/15', recapParPeriode[0].heures >= SEUIL_HEURES ? 'text-emerald-300' : 'opacity-90')}>
-                    <Icon name="calendar" size={12} className="shrink-0" />
-                    Depuis le {fmtDate(recapParPeriode[0].start)} (dernier renouvellement) : {recapParPeriode[0].heures}h ({recapParPeriode[0].nbCachets} cachet(s))
-                  </div>
-                )}
-                {/* Projection avec les cachets déjà saisis : même calcul officiel que le
-                    compteur du haut (fenêtre glissante de 12 mois), juste ancré sur cette
-                    date future plutôt qu'aujourd'hui — pas une remise à zéro. */}
-                <div className={cx('flex items-center gap-1.5 text-xs mt-1 pt-1.5', (data.reexamHistory.length > 0 && recapParPeriode[0]) ? '' : 'border-t border-white/15', ok ? 'text-emerald-300' : 'text-amber-300')}>
-                  <Icon name={ok ? 'check' : 'info'} size={12} className="shrink-0" />
-                  Projection officielle à cette date : {statsFinDroits.heures}h/{SEUIL_HEURES}h{ok ? '' : ` — il manquera ${statsFinDroits.cachetsManquants} cachet(s)`}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {jours < 0 && (
+                    <button onClick={renewDateFinDroits} className={cx('text-xs font-semibold px-2.5 py-1.5 rounded-full', t.soft)}>Nouvelle date +1 an</button>
+                  )}
+                  <button onClick={() => setEditReexamen(true)} title="Remplacer par une autre date" className={cx('text-xs font-medium px-2.5 py-1.5 rounded-full flex items-center gap-1', t.soft)}>
+                    <Icon name="edit" size={12} />Modifier
+                  </button>
                 </div>
               </div>
-            );
-          })()}
-        </div>
+              {/* Compteur "depuis le dernier renouvellement" : purement informatif, PAS
+                  le calcul d'éligibilité officiel (qui reste toujours la fenêtre glissante
+                  de 12 mois, ci-dessous et en haut de page) — répond directement à "est-ce
+                  que ça repart de zéro à la nouvelle date anniversaire ?" sans jamais
+                  fausser le vrai calcul des 507h. N'a de sens qu'après au moins un vrai
+                  renouvellement (reexamHistory non vide) : avant ça, "Période en cours"
+                  couvrirait tout l'historique depuis toujours, pas "depuis un reset". */}
+              {data.reexamHistory.length > 0 && recapParPeriode[0] && (
+                <div className={cx('flex items-center gap-1.5 text-xs mt-1.5 pt-1.5 border-t', t.panelBorder, recapParPeriode[0].heures >= SEUIL_HEURES ? (theme === 'sombre' ? 'text-emerald-400' : 'text-emerald-600') : t.textMuted)}>
+                  <Icon name="calendar" size={12} className="shrink-0" />
+                  Depuis le {fmtDate(recapParPeriode[0].start)} (dernier renouvellement) : {recapParPeriode[0].heures}h ({recapParPeriode[0].nbCachets} cachet(s))
+                </div>
+              )}
+              {/* Projection avec les cachets déjà saisis : même calcul officiel que le
+                  compteur du haut (fenêtre glissante de 12 mois), juste ancré sur cette
+                  date future plutôt qu'aujourd'hui — pas une remise à zéro. */}
+              <div className={cx('flex items-center gap-1.5 text-xs mt-1 pt-1.5', (data.reexamHistory.length > 0 && recapParPeriode[0]) ? '' : cx('border-t', t.panelBorder), okColor)}>
+                <Icon name={ok ? 'check' : 'info'} size={12} className="shrink-0" />
+                Projection officielle à cette date : {statsFinDroits.heures}h/{SEUIL_HEURES}h{ok ? '' : ` — il manquera ${statsFinDroits.cachetsManquants} cachet(s)`}
+              </div>
+            </div>
+          );
+        })()}
       </Card>
 
       <Card>
@@ -2689,7 +2727,7 @@ function RehearsalPlayer({ blocks: allBlocks, monPersonnages, rate, volume }) {
   );
 }
 
-function Teleprompter({ blocks, fontSize, onToggleHighlight, onEditTexte, onReassign, personnages, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages, fill }) {
+function Teleprompter({ blocks, fontSize, onToggleHighlight, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages, fill }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   const [speed, setSpeed] = useState(60); // pixels / seconde
@@ -2726,7 +2764,7 @@ function Teleprompter({ blocks, fontSize, onToggleHighlight, onEditTexte, onReas
         </Field>
       </div>
       <div ref={scrollRef} className={cx('rounded-2xl p-4 overflow-y-auto shadow-sm', fill ? 'flex-1 min-h-0' : 'h-[32rem]', t.panel)} style={{ fontSize: fontSize + 'px' }}>
-        {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} theme={theme} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} onReassign={onReassign} personnages={personnages} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} compact={fill} />)}
+        {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} theme={theme} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} compact={fill} />)}
       </div>
     </div>
   );
@@ -2735,23 +2773,7 @@ function Teleprompter({ blocks, fontSize, onToggleHighlight, onEditTexte, onReas
 // Format "script" classique du théâtre français : nom du personnage centré en
 // capitales au-dessus de la réplique, texte en continu (pas de bulle de chat) —
 // remplace l'ancien style "carte" par bloc, qui ressemblait à une messagerie.
-function ScriptLine({ b, t, theme, showNote, onNoteChange, onToggleHighlight, onEditTexte, onReassign, personnages, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages, compact }) {
-  // Corriger directement une réplique en la lisant (bouton crayon à côté du signet) :
-  // évite d'aller chercher l'onglet "Corriger", séparé de la lecture — l'erreur se
-  // repère et se corrige d'un coup, texte sous les yeux, sans perdre sa place.
-  const [editing, setEditing] = useState(false);
-  // Réattribuer le personnage au même endroit : le menu "Corriger" séparé oblige à
-  // faire défiler TOUTES les répliques pour retrouver celle qu'on vient de lire — ici
-  // la réplique reste sous les yeux, le nom devient une liste déroulante sur place.
-  const [reassigning, setReassigning] = useState(false);
-  const [addingNewChar, setAddingNewChar] = useState(false);
-  const [newCharDraft, setNewCharDraft] = useState('');
-  const confirmNewChar = () => {
-    const name = newCharDraft.trim().toUpperCase();
-    if (!name) return;
-    onReassign(b.id, name);
-    setReassigning(false); setAddingNewChar(false); setNewCharDraft('');
-  };
+function ScriptLine({ b, t, theme, showNote, onNoteChange, onToggleHighlight, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages, compact }) {
   const isDidascalie = b.personnage === 'Didascalie';
   if (isDidascalie) {
     return (
@@ -2770,52 +2792,19 @@ function ScriptLine({ b, t, theme, showNote, onNoteChange, onToggleHighlight, on
   const textStyle = isCharHighlighted ? { color: HIGHLIGHT_TEXT_COLOR } : undefined;
   return (
     <div id={'sl-' + b.id} className={cx(compact ? 'my-2' : 'my-5', 'py-1.5 px-2.5 -mx-2.5 rounded-xl transition-all', b.highlighted && 'border-l-4 border-amber-400 pl-3.5', b.highlighted && !isCharHighlighted && 'bg-amber-400/15', isCharHighlighted && 'shadow-sm', isDimmed && 'opacity-60 hover:opacity-100')} style={wrapStyle}>
-      <div className="flex items-center justify-center gap-1.5 flex-wrap">
-        {reassigning ? (
-          addingNewChar ? (
-            <div className="flex items-center gap-1 shrink-0">
-              <input autoFocus value={newCharDraft} onChange={(e) => setNewCharDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') confirmNewChar(); if (e.key === 'Escape') setAddingNewChar(false); }}
-                placeholder="Nom du personnage…" className={cx('text-xs px-2 py-1 rounded-lg border outline-none w-36', t.panelBorder)} />
-              <button onClick={confirmNewChar} title="Valider" className={cx('shrink-0', t.textMuted)}><Icon name="check" size={14} /></button>
-            </div>
-          ) : (
-            <Select value={b.personnage} onChange={(e) => { if (e.target.value === '__new__') { setAddingNewChar(true); } else { onReassign(b.id, e.target.value); setReassigning(false); } }}
-              className="!w-auto !py-1 !px-2 text-xs shrink-0">
-              {personnages.map(p => <option key={p} value={p}>{p}</option>)}
-              <option value="Didascalie">— Didascalie —</option>
-              <option value="__new__">+ Nouveau personnage…</option>
-            </Select>
-          )
-        ) : (
-          <div className={cx('text-center font-bold uppercase tracking-wide text-[13px]', !isCharHighlighted && t.text)} style={textStyle}>
-            {b.personnage}
-            {b.didascalieEntree && <span className="font-script italic font-normal normal-case tracking-normal" style={textStyle}>{didascalieSeparator(b.didascalieEntree)}{b.didascalieEntree}</span>}
-          </div>
-        )}
-        {onReassign && !addingNewChar && (
-          <button onClick={() => setReassigning(r => !r)} title={reassigning ? 'Annuler' : 'Qui parle ? (corriger le personnage)'} className={cx('shrink-0', reassigning ? 'text-amber-600' : (!isCharHighlighted && t.textMuted))} style={isCharHighlighted && !reassigning ? { color: HIGHLIGHT_TEXT_COLOR, opacity: 0.6 } : undefined}>
-            <Icon name={reassigning ? 'x' : 'users'} size={14} />
-          </button>
-        )}
-        {onEditTexte && !reassigning && (
-          <button onClick={() => setEditing(e => !e)} title={editing ? 'Terminer la correction' : 'Corriger cette réplique'} className={cx('shrink-0', editing ? 'text-amber-600' : (!isCharHighlighted && t.textMuted))} style={isCharHighlighted && !editing ? { color: HIGHLIGHT_TEXT_COLOR, opacity: 0.6 } : undefined}>
-            <Icon name={editing ? 'check' : 'edit'} size={14} />
-          </button>
-        )}
-        {onToggleHighlight && !reassigning && (
+      <div className="flex items-center justify-center gap-1.5">
+        <div className={cx('text-center font-bold uppercase tracking-wide text-[13px]', !isCharHighlighted && t.text)} style={textStyle}>
+          {b.personnage}
+          {b.didascalieEntree && <span className="font-script italic font-normal normal-case tracking-normal" style={textStyle}>{didascalieSeparator(b.didascalieEntree)}{b.didascalieEntree}</span>}
+        </div>
+        {onToggleHighlight && (
           <button onClick={() => onToggleHighlight(b.id)} title="Marquer cette réplique" className={cx('shrink-0', b.highlighted ? 'text-amber-600' : (!isCharHighlighted && t.textMuted))} style={isCharHighlighted && !b.highlighted ? { color: HIGHLIGHT_TEXT_COLOR, opacity: 0.6 } : undefined}>
             <Icon name="tag" size={14} />
           </button>
         )}
       </div>
       <div className={cx('font-script', compact ? 'leading-normal mt-0.5' : 'leading-[1.7] mt-1.5')} style={textStyle}>
-        {editing ? (
-          <textarea value={b.texte} onChange={(e) => onEditTexte(b.id, e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setEditing(false); }} autoFocus rows={Math.max(2, Math.ceil(b.texte.length / 45))}
-            className={cx('w-full rounded-lg p-2 outline-none resize-y bg-transparent border', t.panelBorder)} style={textStyle} />
-        ) : (
-          <MaskableText texte={b.texte} masked={masked && !!monPersonnages && monPersonnages.includes(b.personnage)} />
-        )}
+        <MaskableText texte={b.texte} masked={masked && !!monPersonnages && monPersonnages.includes(b.personnage)} />
       </div>
       {showNote && (
         <div className="flex justify-center mt-2.5">
@@ -2857,12 +2846,12 @@ function IsolatedView({ blocks, monPersonnages, fontSize, masked, showNotes, onN
   );
 }
 
-function TexteCompletView({ blocks, fontSize, showNotes, onNoteChange, onToggleHighlight, onEditTexte, onReassign, personnages, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages }) {
+function TexteCompletView({ blocks, fontSize, showNotes, onNoteChange, onToggleHighlight, surlignagePerso, surlignageCouleurs, focusPerso, masked, monPersonnages }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   return (
     <div style={{ fontSize: fontSize + 'px' }}>
-      {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} theme={theme} showNote={showNotes} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} onReassign={onReassign} personnages={personnages} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />)}
+      {blocks.map(b => <ScriptLine key={b.id} b={b} t={t} theme={theme} showNote={showNotes} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />)}
     </div>
   );
 }
@@ -2894,30 +2883,67 @@ function SceneTimer() {
 // sur mobile (surtout iOS Safari) requestFullscreen() sur un élément quelconque
 // ne fonctionne pas ou pas de façon fiable — un overlay maison marche partout et
 // garantit un bouton de fermeture toujours visible et accessible d'un tap.
-function FullscreenReader({ mode, texte, monPersonnages, fontSize, setFontSize, masked, setMasked, onNoteChange, onToggleHighlight, onEditTexte, onReassign, personnages, surlignagePerso, surlignageCouleurs, focusPerso, onClose }) {
+function FullscreenReader({ mode, setMode, texte, personnages, monPersonnages, fontSize, setFontSize, masked, setMasked, onNoteChange, onToggleHighlight, surlignagePerso, onToggleSurlignagePersonnage, surlignageCouleurs, onChangeSurlignageCouleur, focusPerso, onToggleFocusPersonnage, onClose }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   const [closing, setClosing] = useState(false);
   const handleClose = () => { setClosing(true); setTimeout(onClose, 180); };
+  const [showFocusPanel, setShowFocusPanel] = useState(false);
+  const [showHighlightPanel, setShowHighlightPanel] = useState(false);
   // Mode prompteur : la fenêtre de défilement doit occuper toute la hauteur disponible
   // du plein écran (comme en self-tape) au lieu de rester bridée à une hauteur fixe
   // (h-[32rem]) pensée pour un usage inline dans la page — sinon le plein écran
   // "prompteur" n'apporte presque rien de plus qu'un texte agrandi dans une petite boîte.
   const isPrompteur = mode === 'prompteur';
+  // Le focus/surlignage n'a de sens que sur le texte complet ou le prompteur (comme
+  // dans la barre d'outils de la fiche) : pas de bouton pour rien sur isoler/original.
+  const canHighlight = mode === 'complet' || mode === 'prompteur';
   return (
     <div className={cx('fixed inset-0 z-50 flex flex-col !mt-0', isPrompteur ? 'overflow-hidden' : 'overflow-y-auto', closing ? 'overlayOut' : 'overlayIn', t.bg)}>
-      <div className={cx('sticky top-0 z-10 flex items-center gap-2 px-3 py-2.5 shadow-sm shrink-0', t.panel)}>
-        <input type="range" min="14" max="32" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} className="w-20 shrink-0" />
-        {mode !== 'original' && (
-          <button onClick={() => setMasked(m => !m)} className={cx('text-xs px-2.5 py-1.5 rounded-full font-medium shrink-0 whitespace-nowrap', masked ? t.btnPrimary : cx(t.soft, t.textMuted))}>Cache-mot</button>
+      <div className={cx('sticky top-0 z-10 flex items-center gap-1.5 px-3 py-2.5 shadow-sm shrink-0 flex-wrap', t.panel)}>
+        <input type="range" min="14" max="32" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} className="w-16 shrink-0" />
+        {mode !== 'original' && <IconBtn name="eyeOff" title="Cache-mot" active={masked} onClick={() => setMasked(m => !m)} />}
+        {(mode === 'complet' || mode === 'prompteur') && (
+          <IconBtn name="film" title={isPrompteur ? 'Revenir au texte complet' : 'Prompteur (défilement auto)'} active={isPrompteur} onClick={() => setMode(m => m === 'prompteur' ? 'complet' : 'prompteur')} />
         )}
+        {canHighlight && <IconBtn name="eye" title="Focus" active={showFocusPanel} onClick={() => { setShowHighlightPanel(false); setShowFocusPanel(s => !s); }} />}
+        {canHighlight && <IconBtn name="highlighter" title="Surligner" active={showHighlightPanel} onClick={() => { setShowFocusPanel(false); setShowHighlightPanel(s => !s); }} />}
         <div className="flex-1" />
         <button onClick={handleClose} title="Fermer le plein écran" className={cx('p-2.5 rounded-full shrink-0', t.soft)}><Icon name="x" size={20} /></button>
       </div>
+      {canHighlight && showFocusPanel && (
+        <div className={cx('mx-3 mt-2 p-3 rounded-2xl shadow-sm shrink-0', t.panel)}>
+          <PersonnageChips personnages={personnages} selected={focusPerso} onToggle={onToggleFocusPersonnage} />
+        </div>
+      )}
+      {canHighlight && showHighlightPanel && (
+        <div className={cx('mx-3 mt-2 p-3 rounded-2xl shadow-sm shrink-0', t.panel)}>
+          <PersonnageChips personnages={personnages} selected={surlignagePerso} onToggle={onToggleSurlignagePersonnage} />
+          {surlignagePerso.length > 0 && (
+            <div className="space-y-1.5 mt-2">
+              {surlignagePerso.map(p => {
+                const couleur = (surlignageCouleurs || {})[p] || 'jaune';
+                return (
+                  <div key={p} className="flex items-center gap-2 flex-wrap">
+                    <span className={cx('text-xs font-medium truncate shrink-0 max-w-[30%]', t.textMuted)}>{p}</span>
+                    {HIGHLIGHT_COLORS.map(c => (
+                      <button key={c.key} title={c.label} onClick={() => onChangeSurlignageCouleur(p, c.key)}
+                        className={cx('w-6 h-6 rounded-full shrink-0 flex items-center justify-center', couleur === c.key && 'ring-2 ring-offset-1', theme === 'sombre' && 'ring-offset-slate-900')}
+                        style={{ backgroundColor: c.bg }}>
+                        {couleur === c.key && <Icon name="check" size={11} className="text-slate-800" />}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
       <div className={cx('max-w-xl mx-auto px-4 py-4 w-full', isPrompteur && 'flex-1 min-h-0 flex flex-col')}>
         {mode === 'isoler' && <IsolatedView blocks={texte.blocks} monPersonnages={monPersonnages} fontSize={fontSize} masked={masked} showNotes={true} onNoteChange={onNoteChange} />}
-        {mode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} onReassign={onReassign} personnages={personnages} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />}
-        {mode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} onReassign={onReassign} personnages={personnages} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} fill />}
+        {mode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={onNoteChange} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} />}
+        {mode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePerso} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPerso} masked={masked} monPersonnages={monPersonnages} fill />}
         {mode === 'original' && <div className="whitespace-pre-wrap leading-relaxed" style={{ fontSize: fontSize + 'px' }}>{texte.original}</div>}
       </div>
     </div>
@@ -2991,7 +3017,7 @@ function PersonnageChips({ personnages, selected, onToggle, allLabel, onSelectAl
 // seules (fermer, prompteur, focus, surligner), toujours visible, pensée pour jouer une
 // scène sans être distrait par du texte de bouton. Sur les navigateurs qui bloquent
 // requestFullscreen (iOS Safari, webview...), l'overlay reste utilisable tel quel.
-function TrueFullscreenReader({ mode, texte, monPersonnages, focusPersonnages, onToggleFocusPersonnage, surlignagePersonnages, onToggleSurlignagePersonnage, surlignageCouleurs, onChangeSurlignageCouleur, onToggleHighlight, onEditTexte, onReassign, personnages, onClose }) {
+function TrueFullscreenReader({ mode, texte, monPersonnages, focusPersonnages, onToggleFocusPersonnage, surlignagePersonnages, onToggleSurlignagePersonnage, surlignageCouleurs, onChangeSurlignageCouleur, onToggleHighlight, personnages, onClose }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   // Reprend le mode de lecture déjà actif (ex. l'onglet "Prompteur" en cours) au lieu de
@@ -3061,8 +3087,8 @@ function TrueFullscreenReader({ mode, texte, monPersonnages, focusPersonnages, o
         </div>
       )}
       <div className={cx('max-w-xl mx-auto px-4 py-4 w-full', isPrompteur && 'flex-1 min-h-0 flex flex-col')}>
-        {innerMode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={22} showNotes={false} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} onReassign={onReassign} personnages={personnages} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} />}
-        {innerMode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={22} onToggleHighlight={onToggleHighlight} onEditTexte={onEditTexte} onReassign={onReassign} personnages={personnages} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} fill />}
+        {innerMode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={22} showNotes={false} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} />}
+        {innerMode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={22} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} fill />}
       </div>
     </div>
   );
@@ -3365,9 +3391,6 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
   const toggleHighlight = (blockId) => {
     onUpdate({ ...texte, blocks: texte.blocks.map(b => b.id === blockId ? { ...b, highlighted: !b.highlighted } : b) });
   };
-  const editTexte = (blockId, nouveauTexte) => {
-    onUpdate({ ...texte, blocks: texte.blocks.map(b => b.id === blockId ? { ...b, texte: nouveauTexte } : b) });
-  };
   // Signets = répliques marquées (icône étiquette) : repères rapides vers une entrée,
   // une réplique clé... Cliquer y saute directement dans le Texte complet.
   const signets = useMemo(() => texte.blocks.filter(b => b.highlighted), [texte.blocks]);
@@ -3541,17 +3564,24 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
             </Card>
           )}
           <Card className="!p-2.5 !rounded-2xl">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {mode !== 'original' && <Btn className="shrink-0 whitespace-nowrap" variant={masked ? 'primary' : 'ghost'} title="Cache tes propres répliques mot par mot ; tape un mot caché pour le révéler" onClick={() => setMasked(m => !m)}><Icon name="eyeOff" size={16} />{masked ? 'Afficher tout' : 'Mode cache-mot'}</Btn>}
-              {(mode === 'complet' || mode === 'prompteur') && (
-                <Btn className="shrink-0 whitespace-nowrap" variant={focusPersonnages.length > 0 ? 'primary' : 'ghost'} title="Adoucit les répliques des autres pour ne garder en pleine lumière que les personnages choisis" onClick={() => { if (focusPersonnages.length === 0 && monPersonnages.length > 0) onUpdate({ ...texte, focusPersonnages: monPersonnages }); setShowFocusPanel(s => !s); }}>
-                  <Icon name="eye" size={16} />Focus{focusPersonnages.length > 1 ? ` (${focusPersonnages.length})` : ''}
-                </Btn>
+            <div className="grid grid-cols-3 gap-1">
+              {mode !== 'original' && (
+                <ToolTile icon="eyeOff" color="slate" active={masked} label={masked ? 'Afficher tout' : 'Cache-mot'}
+                  title="Cache tes propres répliques mot par mot ; tape un mot caché pour le révéler" onClick={() => setMasked(m => !m)} />
               )}
-              <Btn className="shrink-0 whitespace-nowrap" variant={surlignagePersonnages.length > 0 ? 'primary' : 'ghost'} title="Colorer toutes les répliques d'un ou plusieurs personnages" onClick={() => setShowHighlightPanel(s => !s)}><Icon name="highlighter" size={16} />Surligner{surlignagePersonnages.length > 1 ? ` (${surlignagePersonnages.length})` : ''}</Btn>
-              <IconBtn name="film" title={mode === 'isoler' || mode === 'original' ? 'Plein écran (texte agrandi)' : 'Prompteur (plein écran)'} onClick={() => { if (mode === 'complet') setMode('prompteur'); setFullscreen(true); }} />
-              <IconBtn name="maximize" title="Plein écran scène (icônes seules, prompteur/focus/surligner)" onClick={() => setTrueFullscreen(true)} />
-              <IconBtn name="camera" title="Self-tape : caméra + prompteur superposés, pour t'enregistrer en castings" onClick={() => setSelfTape(true)} />
+              {(mode === 'complet' || mode === 'prompteur') && (
+                <ToolTile icon="eye" color="blue" active={focusPersonnages.length > 0} label={`Focus${focusPersonnages.length > 1 ? ` (${focusPersonnages.length})` : ''}`}
+                  title="Adoucit les répliques des autres pour ne garder en pleine lumière que les personnages choisis"
+                  onClick={() => { if (focusPersonnages.length === 0 && monPersonnages.length > 0) onUpdate({ ...texte, focusPersonnages: monPersonnages }); setShowFocusPanel(s => !s); }} />
+              )}
+              <ToolTile icon="highlighter" color="amber" active={surlignagePersonnages.length > 0} label={`Surligner${surlignagePersonnages.length > 1 ? ` (${surlignagePersonnages.length})` : ''}`}
+                title="Colorer toutes les répliques d'un ou plusieurs personnages" onClick={() => setShowHighlightPanel(s => !s)} />
+              <ToolTile icon="film" color="violet" label="Plein écran"
+                title="Agrandit la vue actuelle — passe d'abord sur l'onglet Prompteur pour un plein écran défilant" onClick={() => setFullscreen(true)} />
+              <ToolTile icon="maximize" color="indigo" label="Mode scène"
+                title="Plein écran immersif : prompteur/focus/surligner accessibles en icônes, pour jouer une scène" onClick={() => setTrueFullscreen(true)} />
+              <ToolTile icon="camera" color="rose" label="Self-tape"
+                title="Caméra + prompteur superposés, pour t'enregistrer en castings" onClick={() => setSelfTape(true)} />
             </div>
             {masked && (
               <div className={cx('text-xs mt-2 pt-2 border-t flex items-center gap-1.5', t.panelBorder, t.textMuted)}>
@@ -3613,11 +3643,11 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
         )}
 
         {mode === 'complet' && (
-          <Card className="mt-0"><TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={setNote} onToggleHighlight={toggleHighlight} onEditTexte={editTexte} onReassign={reassign} personnages={personnages} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} masked={masked} monPersonnages={monPersonnages} /></Card>
+          <Card className="mt-0"><TexteCompletView blocks={texte.blocks} fontSize={fontSize} showNotes={true} onNoteChange={setNote} onToggleHighlight={toggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} masked={masked} monPersonnages={monPersonnages} /></Card>
         )}
 
         {mode === 'prompteur' && (
-          <Card className="mt-0"><Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={toggleHighlight} onEditTexte={editTexte} onReassign={reassign} personnages={personnages} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} masked={masked} monPersonnages={monPersonnages} /></Card>
+          <Card className="mt-0"><Teleprompter blocks={texte.blocks} fontSize={fontSize} onToggleHighlight={toggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} masked={masked} monPersonnages={monPersonnages} /></Card>
         )}
 
         {mode === 'original' && (
@@ -3629,9 +3659,11 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
       </div>
 
       {fullscreen && (
-        <FullscreenReader mode={mode} texte={texte} monPersonnages={monPersonnages}
+        <FullscreenReader mode={mode} setMode={setMode} texte={texte} personnages={personnages} monPersonnages={monPersonnages}
           fontSize={fontSize} setFontSize={setFontSize} masked={masked} setMasked={setMasked}
-          onNoteChange={setNote} onToggleHighlight={toggleHighlight} onEditTexte={editTexte} onReassign={reassign} personnages={personnages} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} onClose={() => setFullscreen(false)} />
+          onNoteChange={setNote} onToggleHighlight={toggleHighlight}
+          surlignagePerso={surlignagePersonnages} onToggleSurlignagePersonnage={toggleSurlignagePersonnage} surlignageCouleurs={surlignageCouleurs} onChangeSurlignageCouleur={changeSurlignageCouleur}
+          focusPerso={focusPersonnages} onToggleFocusPersonnage={toggleFocusPersonnage} onClose={() => setFullscreen(false)} />
       )}
 
       {trueFullscreen && (
@@ -3639,7 +3671,7 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
           focusPersonnages={focusPersonnages} onToggleFocusPersonnage={toggleFocusPersonnage}
           surlignagePersonnages={surlignagePersonnages} onToggleSurlignagePersonnage={toggleSurlignagePersonnage}
           surlignageCouleurs={surlignageCouleurs} onChangeSurlignageCouleur={changeSurlignageCouleur}
-          onToggleHighlight={toggleHighlight} onEditTexte={editTexte} onReassign={reassign} onClose={() => setTrueFullscreen(false)} />
+          onToggleHighlight={toggleHighlight} onClose={() => setTrueFullscreen(false)} />
       )}
 
       {selfTape && (
@@ -3664,10 +3696,6 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
 
       {mode === 'correction' && (
         <Card>
-          <div className={cx('text-xs mb-3 p-2.5 rounded-xl flex items-start gap-1.5', t.soft)}>
-            <Icon name="info" size={13} className={cx('shrink-0 mt-0.5', t.textMuted)} />
-            <span className={t.textMuted}>Pour corriger une réplique précise (texte ou "qui parle") sans tout faire défiler : utilise plutôt les icônes <Icon name="edit" size={11} className="inline" /> et <Icon name="users" size={11} className="inline" /> directement sur chaque réplique, en mode <strong>Texte</strong> ou <strong>Prompteur</strong>. Cette liste sert surtout aux corrections en masse ci-dessous.</span>
-          </div>
           <div className={cx('text-xs mb-3', t.textMuted)}>Réattribue une réplique si le découpage automatique s'est trompé, ou marque-la comme didascalie (indication de jeu, pas une réplique).</div>
           <div className={cx('flex items-center justify-between gap-2 mb-3 p-2.5 rounded-xl', t.soft)}>
             <div className="text-xs">Texte importé avant une mise à jour du détecteur ? <span className={t.textMuted}>Relance l'analyse pour bénéficier des dernières corrections.</span></div>
@@ -4368,41 +4396,33 @@ const GUIDE_SECTIONS = [
     icon: 'book', titre: 'Textes',
     items: [
       "\"Écris ou importe un texte, choisis ton rôle, entraîne-toi.\"",
-      "Bouton \"+ Texte\" : colle ton texte, ou importe un fichier (.txt, .docx, .pdf). Plusieurs fichiers d'un coup = un texte par fichier.",
-      "Les personnages sont trouvés tout seuls (nom en MAJUSCULES devant chaque réplique). Une ligne mal reconnue à l'import ? Préfixe-la par [TITRE], [DIDASCALIE] ou [REGIE] avant de coller le texte, pour forcer la détection.",
-      "Une erreur repérée en LISANT (texte faux, ou mauvais personnage) ? Corrige-la sur place, sans chercher la réplique ailleurs — en mode \"Texte\" ou \"Prompteur\", chaque réplique a deux petites icônes : ✏️ pour corriger le texte, 👥 pour changer qui parle (choisir un personnage déjà existant, le marquer [DIDASCALIE], ou taper un nouveau nom).",
-      "Pour des corrections en masse (fusionner deux personnages qui n'en sont qu'un, réanalyser tout le texte après une mise à jour, remplacer entièrement le contenu), utilise l'onglet \"Corriger\".",
-      "Choisis \"Mon personnage\" (un, plusieurs si tu joues deux rôles, ou \"Tout le texte\") — au-delà de 6 personnages, la liste se replie derrière un simple résumé (ex. \"2 personnages\") : tape dessus pour la déplier. Puis lis avec 4 modes (boutons en haut pendant la lecture) :",
+      "\"+ Texte\" : colle ton texte ou importe un fichier (.txt, .docx, .pdf — plusieurs fichiers d'un coup = un texte chacun).",
+      "Personnages détectés tout seuls (nom en MAJUSCULES devant chaque réplique). Un souci ? Corrige à la main dans l'onglet \"Corriger\", qui sait aussi fusionner deux personnages en un.",
+      "Choisis \"Mon personnage\", puis lis avec 4 modes :",
       { type: 'grid', items: [
         { icon: 'tag', label: 'Isoler', text: 'Vois juste tes répliques.' },
         { icon: 'mic', label: 'Répéter', text: "L'appli lit les autres, tu réponds." },
         { icon: 'book', label: 'Texte', text: 'Le texte entier, surligné.' },
         { icon: 'film', label: 'Prompteur', text: 'Défilement auto, plein écran.' },
       ] },
-      "Un personnage \"(off)\" ou \"(voix off)\" reste le même personnage — pas besoin de le choisir deux fois.",
-      "\"Focus\" adoucit les répliques des autres personnages pour ne garder en pleine lumière que ceux choisis — pratique pour repérer facilement où reprendre après une réplique qui n'est pas la tienne.",
-      "\"Surligner\" accepte plusieurs personnages à la fois, chacun avec sa propre couleur (choisie automatiquement, modifiable) — pratique pour repérer plusieurs voix d'un coup d'œil.",
-      "Pendant la lecture : une note sur fond orange sous une réplique = ton indication de jeu ajoutée (intention, déplacement…). L'étiquette pose un signet, pour la retrouver vite.",
-      "Deux icônes plein écran : la première 🎞️ agrandit le texte affiché (et lance directement le Prompteur si tu n'es pas sur \"Isoler\" ou \"Document original\"), la seconde (icône coins ⤢) passe en plein écran scène — juste prompteur/focus/surligner en icônes, toujours accessibles.",
-      "Icône caméra 📷 : mode self-tape — la caméra de ton appareil et le prompteur défilant se superposent, pour t'enregistrer en castings sans jongler entre deux applis. 3 tailles de prompteur (\"Normal\", \"Grand\", \"Très grand\") selon la longueur de tes répliques. La vidéo se télécharge directement (en .mp4 si ton appareil le permet, sinon en .webm), rien n'est envoyé nulle part.",
-      "L'icône de téléchargement (en haut de la fiche) exporte le texte en PDF. Range tes textes par dossier (compagnie, projet…) depuis le menu \"···\".",
-      "La recherche 🔍 (en haut de l'écran) trouve aussi une réplique précise à l'intérieur d'un texte, pas juste son titre.",
+      "\"Focus\" adoucit les autres personnages, \"Surligner\" leur donne une couleur — pratique pour repérer qui parle d'un coup d'œil.",
+      "Icônes en haut de la fiche : plein écran, self-tape (caméra + prompteur superposés), export PDF.",
+      "La recherche 🔍 trouve aussi une réplique précise, pas juste un titre.",
     ],
   },
   {
     icon: 'dumbbell', titre: 'Entraînement',
     items: [
       "\"Des exercices courts pour t'échauffer avant de jouer.\"",
-      "Respiration, corps, voix, plus une liste de virelangues.",
-      "L'étoile = favori.",
-      "Bouton \"+ Exercice\" : ajoute, modifie ou supprime tes propres exercices. L'icône ⚙️ gère les catégories (renommer, supprimer, ou en créer une, ex. \"Enfants\").",
+      "Respiration, corps, voix, plus une liste de virelangues. L'étoile = favori.",
+      "\"+ Exercice\" pour ajouter les tiens ; l'icône ⚙️ gère les catégories.",
     ],
   },
   {
     icon: 'briefcase', titre: 'Intermittent',
     items: [
       "\"Ton compteur des 507 heures, à jour automatiquement.\"",
-      "C'est le seuil à atteindre sur les 12 derniers mois pour garder tes droits. \"Cachets éligibles (12 mois)\" ne compte que ceux qui comptent vraiment pour ce seuil (fenêtre glissante + plafond légal de 28/mois) — ton nombre de cachets \"au total\", même plus vieux ou au-delà du plafond, reste visible plus bas, dans la liste \"Cachets\". Les deux chiffres sont normalement différents, ce n'est pas une erreur.",
+      "C'est le seuil sur les 12 derniers mois pour garder tes droits. \"Éligibles (12 mois)\" ne compte que ce qui compte vraiment pour ce seuil (fenêtre glissante + plafond de 28/mois) — différent du nombre \"total\" plus bas dans la liste, c'est normal.",
       { type: 'grid', items: [
         { icon: 'coins', label: 'Allocation', text: 'Une estimation de ton indemnisation.' },
         { icon: 'briefcase', label: 'Employeurs', text: 'Tes productions, ajoutées toutes seules.' },
@@ -4410,19 +4430,16 @@ const GUIDE_SECTIONS = [
         { icon: 'calendar', label: 'Récap annuel', text: 'Un résumé pour ta déclaration.' },
         { icon: 'calendar', label: 'Anniversaire', text: 'Ta date de fin de droits, projetée (pas ta date de naissance).' },
       ] },
-      "La \"date anniversaire\" (ou date de réexamen) est une estimation, pas une décision officielle — vérifie toujours avec France Travail. Une fois ta date renseignée, un historique par année apparaît pour t'y retrouver (le calcul des 507h, lui, ne change jamais : toujours les 12 derniers mois).",
-      "Sous la date anniversaire, \"Projection officielle à cette date\" indique où tu en seras à ce moment-là avec les cachets déjà saisis — pas une remise à zéro, juste le même calcul des 12 derniers mois, mais projeté sur cette date future. Après un premier renouvellement, une ligne \"Depuis le [date] (dernier renouvellement)\" s'ajoute juste au-dessus : elle repart bien de zéro à chaque nouvelle date, mais uniquement à titre indicatif — ton éligibilité réelle aux 507h ne repart jamais de zéro, elle reste toujours calculée sur tes 12 derniers mois glissants.",
-      "France Travail t'a donné ta vraie date ? Bouton \"Modifier\" à côté de la date, dans le cadre \"Date anniversaire\" tout en haut de l'onglet Intermittent — l'ancienne est gardée dans l'historique par année, pas besoin d'attendre qu'elle soit dépassée.",
-      "\"Historique par année\" garde aussi ton taux horaire moyen de chaque période — pratique pour comparer d'une année d'intermittence à l'autre, même si le taux affiché en haut repart à zéro à chaque nouvelle période.",
+      "\"Date anniversaire\" : une estimation à vérifier avec France Travail, jamais une décision officielle. Une fois renseignée, un historique par année garde tes anciennes périodes et une projection à cette date.",
+      "France Travail t'a donné ta vraie date ? Bouton \"Modifier\" à côté, en haut de l'onglet — l'ancienne reste dans l'historique.",
     ],
   },
   {
     icon: 'film', titre: 'Castings',
     items: [
       "\"Suis tes candidatures, du casting à la date de jeu.\"",
-      "Note chaque casting avec son statut : envoyé, en attente, obtenu…",
-      "Casting passé en \"Obtenu\" ? L'appli propose d'ajouter tout de suite la date de représentation.",
-      "\"Prochaines dates\" liste tes représentations à venir.",
+      "Statut de chaque casting : envoyé, en attente, obtenu…",
+      "Casting \"Obtenu\" ? L'appli propose d'ajouter tout de suite la date de représentation, listée ensuite dans \"Prochaines dates\".",
     ],
   },
   {
@@ -4430,9 +4447,8 @@ const GUIDE_SECTIONS = [
     items: [
       "\"Ton carnet d'adresses pro, avec l'essentiel sous les yeux.\"",
       "Agents, réalisateurs, théâtres… avec catégories et favoris.",
-      "La liste montre un bouton par action possible (appeler, e-mail, itinéraire) — seulement s'il y a bien un téléphone, un email ou une adresse renseignés. Le site web s'affiche en simple lien texte en dessous ; les notes restent dans la fiche (icône crayon).",
-      "Icône ⬆️ en haut : importe un contact depuis un fichier .vcf. Dans sa fiche, un bouton fait l'inverse et l'exporte vers ton téléphone.",
-      "Un contact et un employeur (onglet Intermittent) qui portent le même nom se relient tout seuls : le téléphone apparaît sur la fiche employeur, le nombre de cachets sur la fiche contact — rien à ressaisir.",
+      "Actions rapides (appel, email, itinéraire) affichées seulement quand l'info existe. Icône ⬆️ pour importer un .vcf ; dans une fiche, un bouton fait l'inverse et l'exporte vers ton téléphone.",
+      "Un contact et un employeur du même nom (onglet Intermittent) se relient tout seuls — rien à ressaisir.",
     ],
   },
   {
@@ -4450,12 +4466,9 @@ const GUIDE_SECTIONS = [
     icon: 'settings', titre: 'Réglages',
     items: [
       "\"Personnalise l'appli, et mets tes données à l'abri.\"",
-      "Thème clair ou sombre, couleur, taille du texte.",
-      "\"Sauvegarder\" télécharge un fichier avec tout (textes, cachets, contacts, profil) — à faire souvent, indispensable si tu changes de téléphone.",
-      "\"Restaurer\" remplace tout par une sauvegarde. \"Ajouter\" complète sans rien effacer.",
-      "Un petit point orange sur l'icône ⚙️ (en haut, sur n'importe quel onglet) apparaît si ça fait plus de 30 jours sans sauvegarde — il disparaît tout seul dès que tu en refais une.",
-      "L'appli s'installe comme une vraie appli, sur téléphone (Android, iPhone) ou ordinateur, sans passer par un store : un bandeau \"Installer\" apparaît en haut de l'écran (se ferme d'un tap si tu préfères ne pas l'utiliser — il ne revient plus ensuite). Elle s'ouvre alors en plein écran, avec sa propre icône, sans barre de navigateur.",
-      "\"Partager l'application\" envoie ce même lien à quelqu'un (SMS, WhatsApp, mail…) — chacun installe sa propre appli, avec ses propres données : rien de ce que tu as saisi n'est jamais partagé, tout reste enregistré uniquement sur l'appareil de chaque personne.",
+      "Thème, couleur, taille du texte. \"Installer l'application\" pour l'ajouter à l'écran d'accueil, à tout moment.",
+      "\"Sauvegarder\" télécharge un fichier avec tout (textes, cachets, contacts, profil) — à faire souvent, indispensable si tu changes de téléphone. \"Restaurer\" remplace tout ; \"Ajouter\" complète sans rien effacer.",
+      "Un petit point orange sur l'icône ⚙️ apparaît après 30 jours sans sauvegarde, et disparaît dès que tu en refais une.",
     ],
   },
 ];
@@ -4658,6 +4671,9 @@ function SettingsModal({ data, settings, setData, onClose, onGoToProfil, lastBac
         <div>
           <div className={cx('text-xs font-semibold mb-2', t.textMuted)}>Partager</div>
           <Btn variant="ghost" className="w-full" onClick={shareApp}><Icon name="share" size={16} />Partager l'application</Btn>
+        </div>
+        <div>
+          <InstallSettingsSection />
         </div>
         <div>
           <div className={cx('text-xs font-semibold mb-2', t.textMuted)}>Profil</div>
@@ -5289,13 +5305,10 @@ const HISTORY_LIMIT = 20;
 // un tap — les autres navigateurs (Firefox, Safari) ne l'exposent pas, donc on retombe
 // sur une instruction texte adaptée à la plateforme détectée. Rien n'est envoyé nulle
 // part : tout se décide dans le navigateur de la personne qui regarde l'appli.
-function InstallBanner() {
-  const { theme } = useTheme();
-  const t = themeClasses(theme);
-  const DISMISS_KEY = 'comedien-install-banner-dismissed-v1';
-  const [dismissed, setDismissed] = useState(() => {
-    try { return localStorage.getItem(DISMISS_KEY) === '1'; } catch (e) { return false; }
-  });
+// Détection plateforme + logique d'installation, partagées entre le bandeau
+// auto-affiché une fois (InstallBanner) et l'entrée permanente des Réglages
+// (InstallSettingsSection) — un seul et même contenu, montré à deux endroits.
+function useInstallState() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(() => {
     try { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
@@ -5313,20 +5326,55 @@ function InstallBanner() {
     };
   }, []);
 
-  const dismiss = () => { setDismissed(true); try { localStorage.setItem(DISMISS_KEY, '1'); } catch (e) {} };
-
-  if (installed || dismissed) return null;
-
-  const ua = navigator.userAgent || '';
-  const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const isSafari = isIOS && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
-
   const handleInstallClick = async () => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
     try { await deferredPrompt.userChoice; } catch (e) {}
     setDeferredPrompt(null);
   };
+
+  return { installed, deferredPrompt, handleInstallClick };
+}
+
+function InstallContent({ deferredPrompt, handleInstallClick, t }) {
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isSafari = isIOS && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  return deferredPrompt ? (
+    <>
+      <div className={cx('text-xs mb-2', t.textMuted)}>Accès direct depuis l'écran d'accueil, en plein écran.</div>
+      <Btn onClick={handleInstallClick} className="!text-xs !px-3 !py-1.5"><Icon name="download" size={13} />Installer</Btn>
+    </>
+  ) : isIOS ? (
+    <div className={cx('text-xs', t.textMuted)}>
+      {isSafari
+        ? <>Appuie sur <strong>Partager</strong> (le carré avec la flèche) puis <strong>« Sur l'écran d'accueil »</strong>.</>
+        : <>Ouvre ce lien avec <strong>Safari</strong> pour pouvoir l'installer.</>}
+    </div>
+  ) : (
+    <div className={cx('text-xs', t.textMuted)}>Menu du navigateur (⋮ ou ≡) → <strong>« Installer l'application »</strong>. Avec Chrome ça marche le mieux.</div>
+  );
+}
+
+// Le bandeau ne s'affiche automatiquement qu'une seule fois dans la vie de l'appli
+// (SEEN_KEY posé dès qu'il apparaît, pas seulement en cas de fermeture manuelle) —
+// ensuite, le même contenu reste accessible à la demande depuis les Réglages
+// (InstallSettingsSection), pour ne pas l'imposer à chaque visite.
+function InstallBanner() {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const SEEN_KEY = 'comedien-install-banner-seen-v1';
+  const [hidden, setHidden] = useState(() => {
+    try { return localStorage.getItem(SEEN_KEY) === '1'; } catch (e) { return false; }
+  });
+  const { installed, deferredPrompt, handleInstallClick } = useInstallState();
+
+  useEffect(() => {
+    if (installed) return;
+    try { localStorage.setItem(SEEN_KEY, '1'); } catch (e) {}
+  }, [installed]);
+
+  if (installed || hidden) return null;
 
   return (
     <div className={cx('mx-4 mt-3 p-3 rounded-2xl shadow-sm flex items-start gap-3', t.panel)}>
@@ -5335,22 +5383,30 @@ function InstallBanner() {
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold mb-0.5">Installer Comédien sur cet appareil</div>
-        {deferredPrompt ? (
-          <>
-            <div className={cx('text-xs mb-2', t.textMuted)}>Accès direct depuis l'écran d'accueil, en plein écran.</div>
-            <Btn onClick={handleInstallClick} className="!text-xs !px-3 !py-1.5"><Icon name="download" size={13} />Installer</Btn>
-          </>
-        ) : isIOS ? (
-          <div className={cx('text-xs', t.textMuted)}>
-            {isSafari
-              ? <>Appuie sur <strong>Partager</strong> (le carré avec la flèche) puis <strong>« Sur l'écran d'accueil »</strong>.</>
-              : <>Ouvre ce lien avec <strong>Safari</strong> pour pouvoir l'installer.</>}
-          </div>
-        ) : (
-          <div className={cx('text-xs', t.textMuted)}>Menu du navigateur (⋮ ou ≡) → <strong>« Installer l'application »</strong>. Avec Chrome ça marche le mieux.</div>
-        )}
+        <InstallContent deferredPrompt={deferredPrompt} handleInstallClick={handleInstallClick} t={t} />
       </div>
-      <button onClick={dismiss} className={cx('p-1 rounded-full shrink-0', t.textMuted)} title="Masquer"><Icon name="x" size={16} /></button>
+      <button onClick={() => setHidden(true)} className={cx('p-1 rounded-full shrink-0', t.textMuted)} title="Masquer"><Icon name="x" size={16} /></button>
+    </div>
+  );
+}
+
+// Entrée permanente dans Réglages : le seul endroit où retrouver l'installation une
+// fois le bandeau auto-affiché (une fois) disparu — repliée par défaut, comme les
+// autres sections de Réglages.
+function InstallSettingsSection() {
+  const { theme } = useTheme();
+  const t = themeClasses(theme);
+  const { installed, deferredPrompt, handleInstallClick } = useInstallState();
+  if (installed) return null;
+  // Toujours visible (pas de repli derrière un chevron) : repliée, cette section passait
+  // inaperçue à côté des autres boutons pleine largeur de Réglages — c'est justement
+  // l'endroit où on doit pouvoir la retrouver une fois le bandeau auto-affiché disparu.
+  return (
+    <div>
+      <div className={cx('text-xs font-semibold mb-2', t.textMuted)}>Installer l'application</div>
+      <div className={cx('rounded-2xl p-3', t.soft)}>
+        <InstallContent deferredPrompt={deferredPrompt} handleInstallClick={handleInstallClick} t={t} />
+      </div>
     </div>
   );
 }
