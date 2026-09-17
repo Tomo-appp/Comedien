@@ -773,7 +773,7 @@ function ToolTile({ icon, label, color = 'slate', active, onClick, title }) {
   const c = TOOL_TILE_COLORS[color] || TOOL_TILE_COLORS.slate;
   return (
     <button type="button" title={title} onClick={onClick}
-      className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-2xl text-center transition active:scale-95 w-20 shrink-0">
+      className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-2xl text-center transition active:scale-95 w-full min-w-0">
       <span className={cx('w-8 h-8 rounded-full flex items-center justify-center shrink-0', active ? c.full : (theme === 'sombre' ? c.softDark : c.soft))}>
         <Icon name={icon} size={15} />
       </span>
@@ -3502,11 +3502,14 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
             </Card>
           )}
           <Card className="!p-2.5 !rounded-2xl">
-            {/* flex + justify-center (pas grid) : le nombre de pastilles varie selon le
-                mode (Focus n'apparaît qu'en Texte/Prompteur) — une grille à colonnes
-                fixes laisse un trou disgracieux quand la dernière rangée est incomplète,
-                alors que centrer les pastilles restantes reste propre dans tous les cas. */}
-            <div className="flex flex-wrap justify-center gap-x-1 gap-y-2">
+            {/* Grille à colonnes en %, jamais en pixels fixes : une largeur fixe par
+                pastille (ex. w-20) déborde ou tombe mal sur les petits écrans de
+                téléphone selon leur largeur exacte — 3 colonnes en pourcentage restent
+                alignées quelle que soit la largeur réelle. Le nombre de pastilles varie
+                selon le mode (Focus n'apparaît qu'en Texte/Prompteur) : une dernière
+                rangée incomplète reste possible, mais chaque pastille garde toujours
+                la même largeur et le même alignement que les autres. */}
+            <div className="grid grid-cols-3 gap-1.5">
               {mode !== 'original' && (
                 <ToolTile icon="eyeOff" color="slate" active={masked} label={masked ? 'Afficher tout' : 'Cache-mot'}
                   title="Cache tes propres répliques mot par mot ; tape un mot caché pour le révéler" onClick={() => setMasked(m => !m)} />
