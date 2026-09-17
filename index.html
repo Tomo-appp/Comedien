@@ -773,7 +773,7 @@ function ToolTile({ icon, label, color = 'slate', active, onClick, title }) {
   const c = TOOL_TILE_COLORS[color] || TOOL_TILE_COLORS.slate;
   return (
     <button type="button" title={title} onClick={onClick}
-      className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-2xl text-center transition active:scale-95 min-w-0">
+      className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-2xl text-center transition active:scale-95 w-20 shrink-0">
       <span className={cx('w-8 h-8 rounded-full flex items-center justify-center shrink-0', active ? c.full : (theme === 'sombre' ? c.softDark : c.soft))}>
         <Icon name={icon} size={15} />
       </span>
@@ -2879,17 +2879,38 @@ function SceneTimer() {
   );
 }
 
-// Plein écran en overlay CSS (position fixed) plutôt que l'API Fullscreen native :
-// sur mobile (surtout iOS Safari) requestFullscreen() sur un élément quelconque
-// ne fonctionne pas ou pas de façon fiable — un overlay maison marche partout et
-// garantit un bouton de fermeture toujours visible et accessible d'un tap.
-function FullscreenReader({ mode, setMode, texte, personnages, monPersonnages, fontSize, setFontSize, masked, setMasked, onNoteChange, onToggleHighlight, surlignagePerso, onToggleSurlignagePersonnage, surlignageCouleurs, onChangeSurlignageCouleur, focusPerso, onToggleFocusPersonnage, onClose }) {
+// "Mode scène" : overlay CSS (position fixed) qui garantit un bouton de fermeture
+// toujours visible et accessible d'un tap, DOUBLÉ d'une tentative de vrai plein écran
+// navigateur (voir l'effet plus bas) — sur mobile (surtout iOS Safari) requestFullscreen()
+// ne fonctionne pas ou pas de façon fiable, donc l'overlay CSS reste la base qui marche
+// partout, et le vrai plein écran est un bonus quand le navigateur le permet.
+function FullscreenReader({ mode, setMode, texte, personnages, monPersonnages, fontSize, setFontSize, masked, setMasked, onNoteChange, onToggleHighlight, surlignagePerso, onToggleSurlignagePersonnage, surlignageCouleurs, onChangeSurlignageCouleur, focusPerso, onToggleFocusPersonnage, onOpenSelfTape, onClose }) {
   const { theme } = useTheme();
   const t = themeClasses(theme);
   const [closing, setClosing] = useState(false);
   const handleClose = () => { setClosing(true); setTimeout(onClose, 180); };
   const [showFocusPanel, setShowFocusPanel] = useState(false);
   const [showHighlightPanel, setShowHighlightPanel] = useState(false);
+  const rootRef = useRef(null);
+
+  // Vrai plein écran du navigateur (barre d'adresse masquée) — auparavant réservé à
+  // "Mode scène", un second bouton à côté de celui-ci qui faisait presque la même
+  // chose (même prompteur/focus/surligner en plus minimaliste) : les deux étaient
+  // devenus impossibles à distinguer, un seul suffit maintenant.
+  useEffect(() => {
+    const el = rootRef.current;
+    const req = el && (el.requestFullscreen || el.webkitRequestFullscreen);
+    // La promesse peut être rejetée de façon asynchrone (permission refusée par le
+    // navigateur/contexte, ex. iframe sans "allow=fullscreen") — le .catch() est
+    // nécessaire en plus du try/catch, sinon ça reste une erreur non gérée. Dans tous
+    // les cas l'overlay CSS couvre déjà tout l'écran, donc rien ne bloque si ça échoue.
+    if (req) { try { const p = req.call(el); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+    return () => {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if ((document.fullscreenElement || document.webkitFullscreenElement) && exit) { try { const p = exit.call(document); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+    };
+  }, []);
+
   // Mode prompteur : la fenêtre de défilement doit occuper toute la hauteur disponible
   // du plein écran (comme en self-tape) au lieu de rester bridée à une hauteur fixe
   // (h-[32rem]) pensée pour un usage inline dans la page — sinon le plein écran
@@ -2899,7 +2920,7 @@ function FullscreenReader({ mode, setMode, texte, personnages, monPersonnages, f
   // dans la barre d'outils de la fiche) : pas de bouton pour rien sur isoler/original.
   const canHighlight = mode === 'complet' || mode === 'prompteur';
   return (
-    <div className={cx('fixed inset-0 z-50 flex flex-col !mt-0', isPrompteur ? 'overflow-hidden' : 'overflow-y-auto', closing ? 'overlayOut' : 'overlayIn', t.bg)}>
+    <div ref={rootRef} className={cx('fixed inset-0 z-50 flex flex-col !mt-0', isPrompteur ? 'overflow-hidden' : 'overflow-y-auto', closing ? 'overlayOut' : 'overlayIn', t.bg)}>
       <div className={cx('sticky top-0 z-10 flex items-center gap-1.5 px-3 py-2.5 shadow-sm shrink-0 flex-wrap', t.panel)}>
         <input type="range" min="14" max="32" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} className="w-16 shrink-0" />
         {mode !== 'original' && <IconBtn name="eyeOff" title="Cache-mot" active={masked} onClick={() => setMasked(m => !m)} />}
@@ -2908,6 +2929,7 @@ function FullscreenReader({ mode, setMode, texte, personnages, monPersonnages, f
         )}
         {canHighlight && <IconBtn name="eye" title="Focus" active={showFocusPanel} onClick={() => { setShowHighlightPanel(false); setShowFocusPanel(s => !s); }} />}
         {canHighlight && <IconBtn name="highlighter" title="Surligner" active={showHighlightPanel} onClick={() => { setShowFocusPanel(false); setShowHighlightPanel(s => !s); }} />}
+        {onOpenSelfTape && <IconBtn name="camera" title="Passer en self-tape (caméra + prompteur)" onClick={onOpenSelfTape} />}
         <div className="flex-1" />
         <button onClick={handleClose} title="Fermer le plein écran" className={cx('p-2.5 rounded-full shrink-0', t.soft)}><Icon name="x" size={20} /></button>
       </div>
@@ -3007,89 +3029,6 @@ function PersonnageChips({ personnages, selected, onToggle, allLabel, onSelectAl
           {personnages.map(p => <Row key={p} checked={selected.includes(p)} onClick={() => onToggle(p)} label={p} />)}
         </div>
       )}
-    </div>
-  );
-}
-
-// Deuxième mode plein écran, distinct du premier (qui ne fait qu'agrandir le texte) :
-// tente le vrai plein écran système du navigateur (masque barre d'adresse / barre de
-// statut du tel) en plus de l'overlay CSS — et une barre du haut réduite à des icônes
-// seules (fermer, prompteur, focus, surligner), toujours visible, pensée pour jouer une
-// scène sans être distrait par du texte de bouton. Sur les navigateurs qui bloquent
-// requestFullscreen (iOS Safari, webview...), l'overlay reste utilisable tel quel.
-function TrueFullscreenReader({ mode, texte, monPersonnages, focusPersonnages, onToggleFocusPersonnage, surlignagePersonnages, onToggleSurlignagePersonnage, surlignageCouleurs, onChangeSurlignageCouleur, onToggleHighlight, personnages, onClose }) {
-  const { theme } = useTheme();
-  const t = themeClasses(theme);
-  // Reprend le mode de lecture déjà actif (ex. l'onglet "Prompteur" en cours) au lieu de
-  // toujours rouvrir en "Texte complet" : sinon ce bouton, censé lancer le plein écran
-  // scène, obligeait à retoucher l'icône prompteur à l'intérieur pour retrouver ce qu'on
-  // avait déjà choisi juste avant.
-  const [innerMode, setInnerMode] = useState(mode === 'prompteur' ? 'prompteur' : 'complet');
-  const [showFocusPanel, setShowFocusPanel] = useState(false);
-  const [showHighlightPanel, setShowHighlightPanel] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const handleClose = () => { setClosing(true); setTimeout(onClose, 180); };
-  const rootRef = useRef(null);
-
-  useEffect(() => {
-    const el = rootRef.current;
-    const req = el && (el.requestFullscreen || el.webkitRequestFullscreen);
-    // La promesse peut être rejetée de façon asynchrone (permission refusée par le
-    // navigateur/contexte, ex. iframe sans "allow=fullscreen") — le .catch() est
-    // nécessaire en plus du try/catch, sinon ça reste une erreur non gérée. Dans tous
-    // les cas l'overlay CSS ci-dessous couvre déjà tout l'écran, donc rien ne bloque.
-    if (req) { try { const p = req.call(el); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
-    return () => {
-      const exit = document.exitFullscreen || document.webkitExitFullscreen;
-      if ((document.fullscreenElement || document.webkitFullscreenElement) && exit) { try { const p = exit.call(document); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
-    };
-  }, []);
-
-  // Même correction de hauteur que dans FullscreenReader : le prompteur doit occuper
-  // toute la place disponible du plein écran plutôt qu'une boîte de hauteur fixe.
-  const isPrompteur = innerMode === 'prompteur';
-  return (
-    <div ref={rootRef} className={cx('fixed inset-0 z-50 flex flex-col !mt-0', isPrompteur ? 'overflow-hidden' : 'overflow-y-auto', closing ? 'overlayOut' : 'overlayIn', t.bg)}>
-      <div className={cx('sticky top-0 z-10 flex items-center justify-center gap-2 px-3 py-2.5 shadow-sm shrink-0', t.panel)}>
-        <IconBtn name="x" title="Fermer le plein écran" onClick={handleClose} />
-        <div className="w-px h-6 shrink-0 opacity-20 bg-current" />
-        <IconBtn name="film" title={innerMode === 'prompteur' ? 'Arrêter le défilement auto' : 'Prompteur (défilement auto)'} active={innerMode === 'prompteur'} onClick={() => setInnerMode(m => m === 'prompteur' ? 'complet' : 'prompteur')} />
-        <IconBtn name="eye" title="Focus (adoucir les autres personnages)" active={showFocusPanel} onClick={() => { setShowHighlightPanel(false); setShowFocusPanel(s => !s); }} />
-        <IconBtn name="highlighter" title="Surligner un ou plusieurs personnages" active={showHighlightPanel} onClick={() => { setShowFocusPanel(false); setShowHighlightPanel(s => !s); }} />
-      </div>
-      {showFocusPanel && (
-        <div className={cx('mx-3 mt-2 p-3 rounded-2xl shadow-sm', t.panel)}>
-          <PersonnageChips personnages={personnages} selected={focusPersonnages} onToggle={onToggleFocusPersonnage} />
-        </div>
-      )}
-      {showHighlightPanel && (
-        <div className={cx('mx-3 mt-2 p-3 rounded-2xl shadow-sm', t.panel)}>
-          <PersonnageChips personnages={personnages} selected={surlignagePersonnages} onToggle={onToggleSurlignagePersonnage} />
-          {surlignagePersonnages.length > 0 && (
-            <div className="space-y-1.5 mt-2">
-              {surlignagePersonnages.map(p => {
-                const couleur = (surlignageCouleurs || {})[p] || 'jaune';
-                return (
-                  <div key={p} className="flex items-center gap-2 flex-wrap">
-                    <span className={cx('text-xs font-medium truncate shrink-0 max-w-[30%]', t.textMuted)}>{p}</span>
-                    {HIGHLIGHT_COLORS.map(c => (
-                      <button key={c.key} title={c.label} onClick={() => onChangeSurlignageCouleur(p, c.key)}
-                        className={cx('w-6 h-6 rounded-full shrink-0 flex items-center justify-center', couleur === c.key && 'ring-2 ring-offset-1', theme === 'sombre' && 'ring-offset-slate-900')}
-                        style={{ backgroundColor: c.bg }}>
-                        {couleur === c.key && <Icon name="check" size={11} className="text-slate-800" />}
-                      </button>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-      <div className={cx('max-w-xl mx-auto px-4 py-4 w-full', isPrompteur && 'flex-1 min-h-0 flex flex-col')}>
-        {innerMode === 'complet' && <TexteCompletView blocks={texte.blocks} fontSize={22} showNotes={false} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} />}
-        {innerMode === 'prompteur' && <Teleprompter blocks={texte.blocks} fontSize={22} onToggleHighlight={onToggleHighlight} surlignagePerso={surlignagePersonnages} surlignageCouleurs={surlignageCouleurs} focusPerso={focusPersonnages} monPersonnages={monPersonnages} fill />}
-      </div>
     </div>
   );
 }
@@ -3314,7 +3253,6 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
   const [showReplace, setShowReplace] = useState(false);
   const [replaceText, setReplaceText] = useState('');
   const [fullscreen, setFullscreen] = useState(false);
-  const [trueFullscreen, setTrueFullscreen] = useState(false);
   const [selfTape, setSelfTape] = useState(false);
   const headerHeight = useContext(HeaderHeightContext);
   const personnages = useMemo(() => Array.from(new Set(texte.blocks.map(b => b.personnage))).filter(p => p !== 'Didascalie'), [texte.blocks]);
@@ -3564,7 +3502,11 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
             </Card>
           )}
           <Card className="!p-2.5 !rounded-2xl">
-            <div className="grid grid-cols-3 gap-1">
+            {/* flex + justify-center (pas grid) : le nombre de pastilles varie selon le
+                mode (Focus n'apparaît qu'en Texte/Prompteur) — une grille à colonnes
+                fixes laisse un trou disgracieux quand la dernière rangée est incomplète,
+                alors que centrer les pastilles restantes reste propre dans tous les cas. */}
+            <div className="flex flex-wrap justify-center gap-x-1 gap-y-2">
               {mode !== 'original' && (
                 <ToolTile icon="eyeOff" color="slate" active={masked} label={masked ? 'Afficher tout' : 'Cache-mot'}
                   title="Cache tes propres répliques mot par mot ; tape un mot caché pour le révéler" onClick={() => setMasked(m => !m)} />
@@ -3576,10 +3518,8 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
               )}
               <ToolTile icon="highlighter" color="amber" active={surlignagePersonnages.length > 0} label={`Surligner${surlignagePersonnages.length > 1 ? ` (${surlignagePersonnages.length})` : ''}`}
                 title="Colorer toutes les répliques d'un ou plusieurs personnages" onClick={() => setShowHighlightPanel(s => !s)} />
-              <ToolTile icon="film" color="violet" label="Plein écran"
-                title="Agrandit la vue actuelle — passe d'abord sur l'onglet Prompteur pour un plein écran défilant" onClick={() => setFullscreen(true)} />
               <ToolTile icon="maximize" color="indigo" label="Mode scène"
-                title="Plein écran immersif : prompteur/focus/surligner accessibles en icônes, pour jouer une scène" onClick={() => setTrueFullscreen(true)} />
+                title="Plein écran immersif : taille du texte, cache-mot, prompteur, focus, surligner et self-tape, tout accessible sans en sortir" onClick={() => setFullscreen(true)} />
               <ToolTile icon="camera" color="rose" label="Self-tape"
                 title="Caméra + prompteur superposés, pour t'enregistrer en castings" onClick={() => setSelfTape(true)} />
             </div>
@@ -3663,15 +3603,8 @@ function TexteDetail({ texte, dossiers, onUpdate, rate, volume, onRateChange, on
           fontSize={fontSize} setFontSize={setFontSize} masked={masked} setMasked={setMasked}
           onNoteChange={setNote} onToggleHighlight={toggleHighlight}
           surlignagePerso={surlignagePersonnages} onToggleSurlignagePersonnage={toggleSurlignagePersonnage} surlignageCouleurs={surlignageCouleurs} onChangeSurlignageCouleur={changeSurlignageCouleur}
-          focusPerso={focusPersonnages} onToggleFocusPersonnage={toggleFocusPersonnage} onClose={() => setFullscreen(false)} />
-      )}
-
-      {trueFullscreen && (
-        <TrueFullscreenReader mode={mode} texte={texte} personnages={personnages} monPersonnages={monPersonnages}
-          focusPersonnages={focusPersonnages} onToggleFocusPersonnage={toggleFocusPersonnage}
-          surlignagePersonnages={surlignagePersonnages} onToggleSurlignagePersonnage={toggleSurlignagePersonnage}
-          surlignageCouleurs={surlignageCouleurs} onChangeSurlignageCouleur={changeSurlignageCouleur}
-          onToggleHighlight={toggleHighlight} onClose={() => setTrueFullscreen(false)} />
+          focusPerso={focusPersonnages} onToggleFocusPersonnage={toggleFocusPersonnage}
+          onOpenSelfTape={() => { setFullscreen(false); setSelfTape(true); }} onClose={() => setFullscreen(false)} />
       )}
 
       {selfTape && (
@@ -4406,7 +4339,7 @@ const GUIDE_SECTIONS = [
         { icon: 'film', label: 'Prompteur', text: 'Défilement auto, plein écran.' },
       ] },
       "\"Focus\" adoucit les autres personnages, \"Surligner\" leur donne une couleur — pratique pour repérer qui parle d'un coup d'œil.",
-      "Icônes en haut de la fiche : plein écran, self-tape (caméra + prompteur superposés), export PDF.",
+      "\"Mode scène\" : plein écran immersif avec tout dedans (prompteur, focus, surligner, self-tape) — pour jouer sans en sortir. L'icône de téléchargement exporte le texte en PDF.",
       "La recherche 🔍 trouve aussi une réplique précise, pas juste un titre.",
     ],
   },
@@ -5352,7 +5285,34 @@ function InstallContent({ deferredPrompt, handleInstallClick, t }) {
         : <>Ouvre ce lien avec <strong>Safari</strong> pour pouvoir l'installer.</>}
     </div>
   ) : (
-    <div className={cx('text-xs', t.textMuted)}>Menu du navigateur (⋮ ou ≡) → <strong>« Installer l'application »</strong>. Avec Chrome ça marche le mieux.</div>
+    <div className={cx('text-xs', t.textMuted)}>Menu du navigateur (⋮ ou ≡) → <strong>« Installer l'application »</strong> ou <strong>« Ajouter à l'écran d'accueil »</strong> selon le navigateur. Si aucune des deux n'apparaît, ajoute cette page à tes favoris pour la retrouver facilement.</div>
+  );
+}
+
+// Version détaillée, réservée à Réglages : contrairement au bandeau (qui n'affiche que
+// l'instruction du navigateur détecté, pour une nudge rapide), ici on liste TOUS les
+// appareils clairement séparés — utile pour retrouver le bon geste même si on n'est pas
+// sûr de son navigateur, ou pour guider quelqu'un d'autre sur son propre appareil.
+function InstallContentDetailed({ deferredPrompt, handleInstallClick, t }) {
+  const Row = ({ icon, titre, children }) => (
+    <div className="flex items-start gap-2.5">
+      <span className={cx('shrink-0 mt-0.5', t.textMuted)}><Icon name={icon} size={15} /></span>
+      <div className="text-xs leading-relaxed">
+        <span className="font-semibold">{titre}</span> — <span className={t.textMuted}>{children}</span>
+      </div>
+    </div>
+  );
+  return (
+    <div className="space-y-2.5">
+      {deferredPrompt && (
+        <Btn onClick={handleInstallClick} className="!text-xs !px-3 !py-1.5 mb-1"><Icon name="download" size={13} />Installer sur cet appareil</Btn>
+      )}
+      <Row icon="tag" titre="Android (Chrome, Edge, Samsung Internet…)">Menu ⋮ en haut à droite → « Installer l'application » ou « Ajouter à l'écran d'accueil ».</Row>
+      <Row icon="user" titre="iPhone / iPad (Safari)">Bouton Partager (le carré avec la flèche, en bas) → « Sur l'écran d'accueil ». Sur iPhone/iPad, ce geste ne marche que depuis Safari, jamais depuis Chrome ou une autre appli.</Row>
+      <Row icon="briefcase" titre="Ordinateur (Chrome, Edge)">Icône d'installation dans la barre d'adresse (à droite, à côté de l'étoile), ou menu ⋮ → « Installer Comédien ».</Row>
+      <Row icon="mic" titre="Firefox">Sur Android : menu ⋮ → « Installer ». Sur ordinateur, Firefox ne propose pas d'installer les applications web — ajoute la page à tes favoris (Ctrl+D) pour la retrouver facilement.</Row>
+      <Row icon="info" titre="Autre cas">Aucune des options ci-dessus n'apparaît ? Ajoute cette page à tes favoris — ce n'est pas un bug de l'appli, certains navigateurs ne proposent tout simplement pas l'installation.</Row>
+    </div>
   );
 }
 
@@ -5391,21 +5351,31 @@ function InstallBanner() {
 }
 
 // Entrée permanente dans Réglages : le seul endroit où retrouver l'installation une
-// fois le bandeau auto-affiché (une fois) disparu — repliée par défaut, comme les
-// autres sections de Réglages.
+// fois le bandeau auto-affiché (une fois) disparu. Le TITRE de section reste toujours
+// visible (comme "Aide", "Partager"...) pour ne pas passer inaperçu — seul le détail
+// par appareil (Android/iPhone/ordinateur/Firefox) se replie derrière un bouton, pour
+// ne pas allonger Réglages en permanence avec 4 lignes que la plupart n'ouvriront
+// qu'une fois.
 function InstallSettingsSection() {
   const { theme } = useTheme();
   const t = themeClasses(theme);
+  const [expanded, setExpanded] = useState(false);
   const { installed, deferredPrompt, handleInstallClick } = useInstallState();
   if (installed) return null;
-  // Toujours visible (pas de repli derrière un chevron) : repliée, cette section passait
-  // inaperçue à côté des autres boutons pleine largeur de Réglages — c'est justement
-  // l'endroit où on doit pouvoir la retrouver une fois le bandeau auto-affiché disparu.
   return (
     <div>
       <div className={cx('text-xs font-semibold mb-2', t.textMuted)}>Installer l'application</div>
       <div className={cx('rounded-2xl p-3', t.soft)}>
         <InstallContent deferredPrompt={deferredPrompt} handleInstallClick={handleInstallClick} t={t} />
+        <button onClick={() => setExpanded(e => !e)} className={cx('w-full flex items-center justify-between gap-2 mt-2.5 pt-2.5 border-t', t.panelBorder, t.accent)}>
+          <span className="text-xs font-semibold">Voir toutes les options par appareil</span>
+          <Icon name={expanded ? 'chevronUp' : 'chevronDown'} size={15} />
+        </button>
+        {expanded && (
+          <div className="mt-2.5">
+            <InstallContentDetailed deferredPrompt={deferredPrompt} handleInstallClick={handleInstallClick} t={t} />
+          </div>
+        )}
       </div>
     </div>
   );
